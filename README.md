@@ -71,9 +71,9 @@ the next beat.
 The tracked beat can drive the presets: a pulse on every beat is mixed into what presets see as
 `bass`/`bass_att` (or all bands), so they pump in time, also through breakdowns while the tracker
 coasts. The pulse is held at the full mix once the lock is sure; it goes off at once in real silence
-(also short stutter gaps, back within ~150 ms) and when the beat suddenly stops (2 beats without
-onset and kick), and fades only when the kick gets quieter over many beats. A test switch forces
-the full pulse mix. Presets can also switch every
+(also short stutter gaps, back within ~150 ms) and when the whole rhythm suddenly stops for 2 beats
+(fills and changed kick patterns do not count), and fades with the track when it fades out (level
+-8 to -20 dB below its loudest part). A test switch forces the full pulse mix. Presets can also switch every
 8/16/32/64 beats, optionally as a hard cut and on the "1". The bar start comes from key `1`; an
 automatic estimate (where the sound changes) is applied only when it is clearly sure, because in
 electronic music the kick is identical on every beat.

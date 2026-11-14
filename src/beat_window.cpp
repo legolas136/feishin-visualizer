@@ -354,7 +354,10 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     ImGui::ProgressBar(t.beatPhase(), ImVec2(160, 0), "phase");
     ImGui::Text("Signal: %s   tempo differs for %.1f s   phase differs for %.1f s", t.silent ? "silent" : "audio",
                 t.mismatchSeconds, t.phaseMismatchSeconds);
-    ImGui::ProgressBar(t.beatPresence, ImVec2(260, 0), t.beatActive ? "kick presence (beat on)" : "kick presence (beat off)");
+    char bp[64];
+    std::snprintf(bp, sizeof(bp), "beat %s, rhythm %.2f, level %.0f%%", t.beatActive ? "on" : "off", t.beatActivity,
+                  100 * t.loudnessFade);
+    ImGui::ProgressBar(t.beatPresence, ImVec2(260, 0), bp);
     ImGui::SameLine();
     char pm[48];
     std::snprintf(pm, sizeof(pm), "pulse mix applied %.2f", status.pulseMix);
@@ -465,9 +468,9 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     ImGui::SliderFloat("beat pulse mix", &cfg.beatInjectMix, 0.0f, 1.0f, "%.2f");
     ImGui::SetItemTooltip("Mixes a pulse on every tracked beat into what presets see as bass (and bass_att).\n"
                           "0 = off, 1 = presets react only to the tracked beat. Held at this value while the\n"
-                          "beat is on. Off at once in real silence (back within ~150 ms) and when the beat\n"
-                          "suddenly stops (2 beats without onset and kick); fades only when the kick gets\n"
-                          "quieter over many beats.");
+                          "beat is on. Off at once in real silence (back within ~150 ms) and when the rhythm\n"
+                          "suddenly stops for 2 beats (fills and changed kick patterns do not count); fades\n"
+                          "with the track when it fades out (-8 to -20 dB below its loudest part).");
     ImGui::Checkbox("override: always full pulse mix (test)", &cfg.pulseOverride);
     ImGui::SetItemTooltip("Ignores lock confidence, kick presence and silence. Pulses still need tracked beats.\n"
                           "Not saved.");

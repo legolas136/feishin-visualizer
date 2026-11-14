@@ -129,6 +129,17 @@ void BeatTracker::hop(const TrackerSettings& s) {
 
     // --- Silence gate: absolute floor or far below the recent level
     longRms_ = longRms_ * 0.995f + rms * 0.005f;
+
+    // Loudness for fade-outs: level of the last ~2 s vs the loudest level of the track (rises
+    // fast, falls over ~1 min). Full pulse down to -8 dB, none at -20 dB.
+    {
+        const float a2 = 1.0f / (2.0f * fr);
+        levelSlow_ += (rms - levelSlow_) * a2;
+        if (levelSlow_ > levelRef_) levelRef_ += (levelSlow_ - levelRef_) * 0.2f;
+        else levelRef_ += (levelSlow_ - levelRef_) * (1.0f / (60.0f * fr));
+        const float ratio = levelRef_ > 1e-6f ? levelSlow_ / levelRef_ : 0.0f;
+        loudnessFade = std::clamp((ratio - 0.1f) / (0.4f - 0.1f), 0.0f, 1.0f);
+    }
     // Real silence only (pause, track gap): about -70 dBFS or far below the recent level.
     // Quiet breakdowns are not silence.
     silent = rms < 3e-4f || rms < longRms_ * 0.02f;
@@ -370,8 +381,11 @@ void BeatTracker::acquire(const TrackerSettings& s, float period) {
     emitted_ = false;
     confidence = 0.5f;
     mismatchSeconds = 0;
+    const bool relock = state != TrackState::Searching;
     state = TrackState::Locked;
-    // New lock (new track / tempo): bar position and kick level start over
+    // A re-lock (tempo drift / change while the music goes on) keeps the beat state, kick level
+    // and bar position. Only a fresh lock (new track, after losing the beat) starts over.
+    if (relock) return;
     beatIndex_ = 0;
     downbeatOffset_ = -1;
     downbeatManual = false;
@@ -527,9 +541,21 @@ void BeatTracker::track(const TrackerSettings& s) {
     nextBeat_ = beatPos + period_;
     emitted_ = false;
 
-    // Held beat state for the pulse
+    // Held beat state for the pulse. "The beat stopped" = the whole rhythmic activity (onset
+    // function over the last beat, normalised to the recent level) collapses, not just the kick:
+    // fills and changed kick patterns keep plenty of onsets and must not cut the pulse.
     if (!quiet) {
-        const bool evidence = bestFrame >= 0 || kickRaw >= 0.35f;
+        double sum = 0;
+        int count = 0;
+        const double evalBeat = beatPos;
+        for (long f = static_cast<long>(evalBeat - period_ + win); f <= static_cast<long>(evalBeat + win); f++) {
+            if (f < 0 || f >= n_ || f < n_ - kHistory) continue;
+            sum += odf[f % kHistory];
+            count++;
+        }
+        const float activity = count ? static_cast<float>(sum / count) : 1.0f;
+        beatActivity = activity;
+        const bool evidence = activity >= 0.45f && (bestFrame >= 0 || kickRaw >= 0.35f || activity >= 0.8f);
         if (evidence) {
             missedBeats_ = 0;
             goodBeats_++;
@@ -538,9 +564,9 @@ void BeatTracker::track(const TrackerSettings& s) {
             goodBeats_ = 0;
         }
         presenceSlow = goodBeats_ == 1 && presenceSlow == 0 ? beatPresence
-                                                            : presenceSlow + (beatPresence - presenceSlow) * (1.0f / 16.0f);
+                                                            : presenceSlow + (beatPresence - presenceSlow) * (1.0f / 8.0f);
         if (!beatActive && confidence >= 0.5f && goodBeats_ >= 2) beatActive = true;
-        if (beatActive && missedBeats_ >= 2) beatActive = false;  // the beat suddenly stopped
+        if (beatActive && missedBeats_ >= 2 && activity < 0.45f) beatActive = false;  // the beat suddenly stopped
     }
 
     // State changes (soft lock): silence or weak matches only make us coast on the last tempo.

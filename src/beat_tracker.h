@@ -62,10 +62,12 @@ public:
     float silentSeconds = 0;  // how long the current silence lasts (0 while there is sound)
 
     // Held "beat is on" state for the beat pulse: on once the lock is sure, off only when the
-    // beat suddenly stops (2 beats without onset and kick) or the tempo is lost. Silence is
+    // rhythmic activity collapses for 2 beats or the tempo is lost. Silence is
     // handled by the caller (instant mute, instant return).
     bool beatActive = false;
-    float presenceSlow = 0;   // kick presence averaged over ~16 beats (for real fade-outs)
+    float presenceSlow = 0;   // kick presence averaged over ~8 beats (for real fade-outs)
+    float beatActivity = 1;   // rhythmic activity over the last beat (1 = usual, <0.45 = stopped)
+    float loudnessFade = 1;   // 1 = normal level, falls to 0 when the track fades out (-8 .. -20 dB)
 
     // Bar position ("the 1"): manual (markDownbeat) or estimated from where the sound changes
     int barPosition() const;             // 0 = last beat was the "1", 1..3, -1 = unknown
@@ -105,6 +107,7 @@ private:
 
     long n_ = 0;  // number of onset frames processed
     float emaFull_ = 0, emaLow_ = 0, longRms_ = 0, emaClick_ = 0, emaSubE_ = 0;
+    float levelSlow_ = 0, levelRef_ = 0;
     std::vector<float> clickHist_, subHist_;  // normalised click onsets / sub-bass energy per frame
     int kickDelay_ = 2;                       // frames the kick detector lags behind
 

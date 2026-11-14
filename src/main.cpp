@@ -655,9 +655,9 @@ int main(int argc, char* argv[]) {
             const float k = app.cfg.reactionStrength;
 
             // Tracked beat as a pulse, held at the full mix while the beat is on. Off at once on real
-            // silence (back within ~150 ms) or when the beat suddenly stops; fades only when the kick
-            // gets quieter over many beats.
-            const float fade = std::clamp((app.tracker.presenceSlow - 0.1f) / 0.3f, 0.0f, 1.0f);
+            // silence (back within ~150 ms) or when the rhythm suddenly stops; fades with the track
+            // when it fades out (level below -8 dB of its loudest part).
+            const float fade = app.tracker.loudnessFade;
             float target = (app.tracker.silent || !app.tracker.beatActive) ? 0.0f : app.cfg.beatInjectMix * fade;
             if (app.cfg.pulseOverride) target = app.cfg.beatInjectMix;  // test switch
             if (target < app.injectMix) app.injectMix = target;
