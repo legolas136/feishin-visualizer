@@ -281,7 +281,12 @@ void BeatTracker::estimateTempo(const TrackerSettings& s) {
     // Locked/coasting: does the estimate disagree with the locked tempo (ignoring 2x / 0.5x)?
     const float ratio = period_ / lag;
     const bool sameTempo = std::fabs(ratio - 1.0f) < 0.05f;
-    const bool octave = std::fabs(ratio - 2.0f) < 0.1f || std::fabs(ratio - 0.5f) < 0.05f;
+    // Related tempi (half/double, 2:3 / 3:2, third/triple) are metrical levels of the same beat:
+    // breakdowns and fills make them win briefly, but they are no reason to re-lock.
+    bool octave = false;
+    for (const float r : {2.0f, 0.5f, 1.5f, 2.0f / 3.0f, 3.0f, 1.0f / 3.0f}) {
+        if (std::fabs(ratio / r - 1.0f) < 0.04f) octave = true;
+    }
     if (estimateConfidence >= s.acquireConfidence && !sameTempo && !octave && agreeingEstimates_ >= 1) {
         mismatchSeconds += 24.0f / fr;
         if (mismatchSeconds >= s.relockSeconds) acquire(s, lag);
