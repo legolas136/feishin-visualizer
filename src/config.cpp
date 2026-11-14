@@ -43,6 +43,18 @@ void saveConfig(const std::filesystem::path& path, const Config& c) {
         << "\n# Presets react to the analysis above (1) or to projectM's own (0); reaction strength 1 = MilkDrop\n"
         << "presets_use_analysis=" << c.presetsUseAnalysis << "\n"
         << "reaction_strength=" << c.reactionStrength << "\n"
+        << "\n# Beat tracker (real beat / BPM detection, beat window tab 'Beat tracker')\n"
+        << "tracker_min_bpm=" << c.tracker.minBpm << "\n"
+        << "tracker_max_bpm=" << c.tracker.maxBpm << "\n"
+        << "tracker_preferred_bpm=" << c.tracker.preferredBpm << "\n"
+        << "tracker_sensitivity=" << c.tracker.sensitivity << "\n"
+        << "tracker_bass_weight=" << c.tracker.bassWeight << "\n"
+        << "tracker_phase_gain=" << c.tracker.phaseGain << "\n"
+        << "tracker_tempo_gain=" << c.tracker.tempoGain << "\n"
+        << "tracker_acquire_confidence=" << c.tracker.acquireConfidence << "\n"
+        << "tracker_coast_seconds=" << c.tracker.coastSeconds << "\n"
+        << "tracker_relock_seconds=" << c.tracker.relockSeconds << "\n"
+        << "tracker_align_switches=" << c.tracker.alignSwitches << "\n"
         << "\n# Sync: low_latency = render without queued frames, audio_delay_ms = delay visuals\n"
         << "vsync=" << c.vsync << "\n"
         << "low_latency=" << c.lowLatency << "\n"
@@ -84,6 +96,17 @@ Config loadConfig(const std::filesystem::path& path) {
             else if (key == "analysis_stereo_mix") b.stereoMix = toBool(value);
             else if (key == "analysis_window") b.windowSamples = std::stoi(value);
             else if (key == "beat_sensitivity") {}  // removed: projectM 4.1 ignores it
+            else if (key == "tracker_min_bpm") c.tracker.minBpm = std::stof(value);
+            else if (key == "tracker_max_bpm") c.tracker.maxBpm = std::stof(value);
+            else if (key == "tracker_preferred_bpm") c.tracker.preferredBpm = std::stof(value);
+            else if (key == "tracker_sensitivity") c.tracker.sensitivity = std::stof(value);
+            else if (key == "tracker_bass_weight") c.tracker.bassWeight = std::stof(value);
+            else if (key == "tracker_phase_gain") c.tracker.phaseGain = std::stof(value);
+            else if (key == "tracker_tempo_gain") c.tracker.tempoGain = std::stof(value);
+            else if (key == "tracker_acquire_confidence") c.tracker.acquireConfidence = std::stof(value);
+            else if (key == "tracker_coast_seconds") c.tracker.coastSeconds = std::stof(value);
+            else if (key == "tracker_relock_seconds") c.tracker.relockSeconds = std::stof(value);
+            else if (key == "tracker_align_switches") c.tracker.alignSwitches = toBool(value);
             else if (key == "presets_use_analysis") c.presetsUseAnalysis = toBool(value);
             else if (key == "reaction_strength") c.reactionStrength = std::stof(value);
             else if (key == "mesh_width") c.meshWidth = std::stoi(value);

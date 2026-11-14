@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "beat_analysis.h"
+#include "beat_tracker.h"
 #include "config.h"
 
 struct ImGuiContext;
@@ -21,6 +22,7 @@ public:
         int sampleRate = 0;
         float captureAgeMs = 0;  // age of the newest audio when analysed
         float frameMs = 0;       // render time per frame
+        double lastBeatAgo = 1e9;  // seconds since the tracker's last beat
     };
 
     struct Actions {
@@ -40,9 +42,11 @@ public:
     // Records one frame of analysis for the graphs (call every frame, also when closed).
     void record(const BeatAnalysis& a, bool hardCut);
 
-    Actions render(const BeatAnalysis& a, Config& cfg, const Status& status);
+    Actions render(const BeatAnalysis& a, const BeatTracker& tracker, Config& cfg, const Status& status);
 
 private:
+    void drawTracker(const BeatTracker& t, TrackerSettings& s, const Status& status);
+
     SDL_Window* window_ = nullptr;
     SDL_GLContext gl_ = nullptr;
     ImGuiContext* imgui_ = nullptr;

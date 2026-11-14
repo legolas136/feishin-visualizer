@@ -4,6 +4,7 @@
 #include <string>
 
 #include "beat_analysis.h"
+#include "beat_tracker.h"
 
 struct Config {
     std::string presetDir = "presets";
@@ -11,6 +12,7 @@ struct Config {
 
     // Preset switching, blending and hard cuts (MilkDrop 2 settings and defaults)
     BeatSettings beat;
+    TrackerSettings tracker;
     // Presets react to our analysis (window, stereo mix) instead of projectM's own (patched projectM)
     bool presetsUseAnalysis = true;
     // Scales how far bass/mid/treb move away from 1.0 for the presets (1 = MilkDrop)

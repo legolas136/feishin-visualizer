@@ -86,7 +86,8 @@ void BeatWindow::record(const BeatAnalysis& a, bool hardCut) {
     pos_ = (pos_ + 1) % kHistory;
 }
 
-BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const Status& status) {
+BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker& tracker, Config& cfg,
+                                       const Status& status) {
     Actions actions;
     if (!window_) return actions;
     BeatSettings& s = cfg.beat;
@@ -129,6 +130,8 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
                 status.sampleRate);
 
     // --- Levels as MilkDrop presets see them
+    if (ImGui::BeginTabBar("tabs")) {
+    if (ImGui::BeginTabItem("MilkDrop analysis")) {
     ImGui::SeparatorText("Levels (1.0 = average of the song)");
     for (int i = 0; i < 3; i++) {
         char overlay[64];
@@ -243,11 +246,21 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     ImGui::Checkbox("low latency (no queued frames)", &cfg.lowLatency);
     ImGui::SliderFloat("audio delay (ms)", &cfg.audioDelayMs, 0.0f, 500.0f, "%.0f");
 
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Beat tracker")) {
+        drawTracker(tracker, cfg.tracker, status);
+        ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+    }
+
     ImGui::Spacing();
     if (ImGui::Button("Save to config.ini")) actions.save = true;
     ImGui::SameLine();
-    if (ImGui::Button("MilkDrop defaults")) {
+    if (ImGui::Button("Defaults (MilkDrop)")) {
         s = BeatSettings{};
+        cfg.tracker = TrackerSettings{};
         cfg.reactionStrength = 1.0f;
     }
 
@@ -264,4 +277,153 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     ImGui::SetCurrentContext(previous);
     SDL_GL_MakeCurrent(prevWin, prevGl);
     return actions;
+}
+
+void BeatWindow::drawTracker(const BeatTracker& t, TrackerSettings& s, const Status& status) {
+    const float fr = t.frameRate();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // --- Lamp + state
+    const char* stateName = "searching";
+    ImU32 lampColor = IM_COL32(150, 150, 150, 255);
+    if (t.state == TrackState::Locked) {
+        stateName = "locked";
+        lampColor = IM_COL32(80, 255, 120, 255);
+    } else if (t.state == TrackState::Coasting) {
+        stateName = "coasting (silence, keeps the beat)";
+        lampColor = IM_COL32(255, 190, 60, 255);
+    }
+    const float radius = 46.0f;
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    const ImVec2 c(p0.x + radius + 4, p0.y + radius + 4);
+    const float flash = t.state == TrackState::Searching ? 0.0f : std::exp(-static_cast<float>(status.lastBeatAgo) / 0.15f);
+    dl->AddCircleFilled(c, radius, IM_COL32(35, 35, 40, 255), 48);
+    const ImU32 lit = (lampColor & 0x00FFFFFF) | (static_cast<ImU32>(40 + 215 * flash) << 24);
+    dl->AddCircleFilled(c, radius * (0.75f + 0.25f * flash), lit, 48);
+    dl->AddCircle(c, radius, lampColor, 48, 2.0f);
+
+    // onset lamp (raw detection, no tracking)
+    long lastOnset = -1;
+    for (long f = t.frame() - 1; f >= 0 && f >= t.frame() - BeatTracker::kHistory; f--) {
+        if (t.flags[f % BeatTracker::kHistory] & BeatTracker::FlagOnset) {
+            lastOnset = f;
+            break;
+        }
+    }
+    const float onsetAgo = lastOnset < 0 ? 1e9f : (t.frame() - lastOnset) / fr;
+    const ImVec2 oc(c.x + radius + 30, c.y + radius - 12);
+    dl->AddCircleFilled(oc, 12, IM_COL32(60, 220, 255, static_cast<int>(40 + 215 * std::exp(-onsetAgo / 0.1f))), 24);
+
+    // beat counter (1-4, no downbeat detection)
+    for (int k = 0; k < 4; k++) {
+        const bool on = t.state != TrackState::Searching && (t.beatCount - 1) % 4 == k;
+        dl->AddCircleFilled(ImVec2(c.x - radius + 6 + k * 26.0f, c.y + radius + 20), 8,
+                            on ? lampColor : IM_COL32(60, 60, 70, 255), 16);
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(c.x + radius + 60, p0.y));
+    ImGui::BeginGroup();
+    ImGui::Text("State: %s", stateName);
+    if (t.state == TrackState::Searching) ImGui::Text("BPM: -");
+    else ImGui::Text("BPM: %.1f", t.bpm());
+    ImGui::Text("Tempo estimate: %.1f BPM (confidence %.2f, lock at %.2f)", t.estimateBpm, t.estimateConfidence,
+                s.acquireConfidence);
+    ImGui::ProgressBar(t.confidence, ImVec2(260, 0), "beat match confidence");
+    ImGui::SameLine();
+    ImGui::ProgressBar(t.beatPhase(), ImVec2(160, 0), "phase");
+    ImGui::Text("Signal: %s   tempo differs for %.1f s   phase differs for %.1f s", t.silent ? "silent" : "audio",
+                t.mismatchSeconds, t.phaseMismatchSeconds);
+    ImGui::TextDisabled("Big lamp = tracked beat, small cyan lamp = raw onset, dots = beat 1-4 (not bar-aligned)");
+    ImGui::EndGroup();
+    ImGui::SetCursorScreenPos(ImVec2(p0.x, p0.y + 2 * radius + 40));
+
+    // --- Onset function history
+    ImGui::SeparatorText("Last 6 s: onset strength (white), threshold (yellow), bass onsets (red)");
+    {
+        const ImVec2 size(ImGui::GetContentRegionAvail().x, 180);
+        const ImVec2 q = ImGui::GetCursorScreenPos();
+        dl->AddRectFilled(q, ImVec2(q.x + size.x, q.y + size.y), IM_COL32(20, 20, 24, 255));
+        const int frames = std::min<long>(static_cast<int>(6.0f * fr), BeatTracker::kHistory - 1);
+        const long end = t.frame();
+        const long start = std::max<long>(0, end - frames);
+        float peak = 1.0f;
+        for (long f = start; f < end; f++) peak = std::max(peak, t.odf[f % BeatTracker::kHistory]);
+        const float dx = size.x / frames;
+        auto yOf = [&](float v) { return q.y + size.y - std::clamp(v / peak, 0.0f, 1.0f) * (size.y - 16); };
+        for (long f = start + 1; f < end; f++) {
+            const int i0 = static_cast<int>((f - 1) % BeatTracker::kHistory);
+            const int i1 = static_cast<int>(f % BeatTracker::kHistory);
+            const float x0 = q.x + (f - 1 - (end - frames)) * dx, x1 = x0 + dx;
+            const uint8_t fl = t.flags[i1];
+            if (fl & BeatTracker::FlagSilent) {
+                dl->AddRectFilled(ImVec2(x0, q.y), ImVec2(x1, q.y + size.y), IM_COL32(30, 30, 60, 255));
+            }
+            if (fl & BeatTracker::FlagBeat) {
+                dl->AddLine(ImVec2(x1, q.y), ImVec2(x1, q.y + size.y), IM_COL32(80, 255, 120, 160), 2.0f);
+            }
+            if (fl & BeatTracker::FlagCorrected) {
+                dl->AddTriangleFilled(ImVec2(x1 - 5, q.y), ImVec2(x1 + 5, q.y), ImVec2(x1, q.y + 9),
+                                      IM_COL32(255, 80, 255, 255));
+            }
+            if (fl & BeatTracker::FlagOnset) {
+                const ImU32 col = (fl & BeatTracker::FlagMatched) ? IM_COL32(80, 255, 120, 255) : IM_COL32(60, 220, 255, 255);
+                dl->AddRectFilled(ImVec2(x1 - 2, q.y + size.y - 10), ImVec2(x1 + 2, q.y + size.y), col);
+            }
+            dl->AddLine(ImVec2(x0, yOf(t.odfPhase[i0])), ImVec2(x1, yOf(t.odfPhase[i1])), IM_COL32(255, 90, 90, 140));
+            dl->AddLine(ImVec2(x0, yOf(t.threshold[i0])), ImVec2(x1, yOf(t.threshold[i1])), IM_COL32(255, 220, 60, 200));
+            dl->AddLine(ImVec2(x0, yOf(t.odf[i0])), ImVec2(x1, yOf(t.odf[i1])), IM_COL32(255, 255, 255, 255), 1.5f);
+        }
+        ImGui::Dummy(size);
+        ImGui::TextDisabled("Green lines = tracked beats, magenta = corrected beat position, blue/cyan ticks = onsets "
+                            "(green = matched a beat), dark blue = silence");
+    }
+
+    // --- Tempo curve
+    ImGui::SeparatorText("Tempo candidates (autocorrelation x tempo preference)");
+    if (!t.tempoCurve.empty()) {
+        const ImVec2 size(ImGui::GetContentRegionAvail().x, 90);
+        const ImVec2 q = ImGui::GetCursorScreenPos();
+        dl->AddRectFilled(q, ImVec2(q.x + size.x, q.y + size.y), IM_COL32(20, 20, 24, 255));
+        const int nb = static_cast<int>(t.tempoCurve.size());
+        float peak = 1e-6f;
+        for (float v : t.tempoCurve) peak = std::max(peak, v);
+        const float bw = size.x / nb;
+        for (int b = 0; b < nb; b++) {
+            const float h = t.tempoCurve[b] / peak * (size.y - 14);
+            dl->AddRectFilled(ImVec2(q.x + b * bw, q.y + size.y - h), ImVec2(q.x + (b + 1) * bw - 1, q.y + size.y),
+                              IM_COL32(110, 110, 140, 255));
+        }
+        auto xOf = [&](float bpmValue) { return q.x + (bpmValue - t.tempoCurveMinBpm + 0.5f) * bw; };
+        dl->AddLine(ImVec2(xOf(t.estimateBpm), q.y), ImVec2(xOf(t.estimateBpm), q.y + size.y), IM_COL32(255, 255, 255, 255), 2.0f);
+        if (t.state != TrackState::Searching) {
+            dl->AddLine(ImVec2(xOf(t.bpm()), q.y), ImVec2(xOf(t.bpm()), q.y + size.y), IM_COL32(80, 255, 120, 255), 2.0f);
+        }
+        for (int bv = static_cast<int>(std::ceil(t.tempoCurveMinBpm / 20.0f) * 20); bv < t.tempoCurveMinBpm + nb; bv += 20) {
+            char label[8];
+            std::snprintf(label, sizeof(label), "%d", bv);
+            dl->AddText(ImVec2(xOf(static_cast<float>(bv)), q.y), IM_COL32(150, 150, 160, 255), label);
+        }
+        ImGui::Dummy(size);
+        ImGui::TextDisabled("White = estimate, green = tracked tempo");
+    }
+
+    // --- Settings
+    ImGui::SeparatorText("Tracker settings");
+    ImGui::DragFloatRange2("tempo range (BPM)", &s.minBpm, &s.maxBpm, 1.0f, 40.0f, 240.0f, "%.0f", "%.0f",
+                           ImGuiSliderFlags_AlwaysClamp);
+    if (s.maxBpm < s.minBpm + 20) s.maxBpm = s.minBpm + 20;
+    ImGui::SliderFloat("preferred tempo (BPM)", &s.preferredBpm, s.minBpm, s.maxBpm, "%.0f");
+    ImGui::SetItemTooltip("Centre of the tempo preference, decides between half and double tempo.");
+    ImGui::SliderFloat("onset sensitivity", &s.sensitivity, 0.3f, 3.0f, "%.2f");
+    ImGui::SliderFloat("bass weight", &s.bassWeight, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("0 = all frequencies, 1 = kick drum range (30-180 Hz) only.");
+    ImGui::SliderFloat("phase correction", &s.phaseGain, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("How strongly a matching onset pulls the beat. Low = steady lock, high = follows quickly.");
+    ImGui::SliderFloat("tempo correction", &s.tempoGain, 0.0f, 0.2f, "%.3f");
+    ImGui::SliderFloat("lock threshold", &s.acquireConfidence, 0.05f, 0.8f, "%.2f");
+    ImGui::SetItemTooltip("Tempo confidence needed to lock. Higher = fewer false locks on beatless music.");
+    ImGui::SliderFloat("survive silence (s)", &s.coastSeconds, 0.0f, 60.0f, "%.0f");
+    ImGui::SliderFloat("re-lock after (s)", &s.relockSeconds, 1.0f, 15.0f, "%.1f");
+    ImGui::SetItemTooltip("A different tempo (new track, tempo change) must persist this long before re-locking.");
+    ImGui::Checkbox("automatic preset switches wait for the next beat", &s.alignSwitches);
 }

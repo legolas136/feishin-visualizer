@@ -56,6 +56,16 @@ equal bands over 0-11 kHz, attack/decay averaging and the decaying hard-cut thre
 presets themselves react to come from projectM 4.1, which uses the same MilkDrop algorithm (576 samples,
 left channel). Analysis window and stereo mix in the beat window affect switching and hard cuts only.
 
+## Beat tracker
+
+Separate from MilkDrop's bass/mid/treb, a real beat tracker (beat window, tab "Beat tracker"):
+log spectral-flux onset detection (with kick-drum weighting), tempo estimation by autocorrelation
+with a tempo preference against half/double tempo, and a phase-locked loop that predicts beats,
+corrects phase and tempo on matching onsets, keeps the beat through silence ("coasting") and
+re-locks on tempo changes or new tracks. The tab shows a beat lamp, BPM, confidence, onset curve
+and tempo candidates; all parameters are adjustable. Optionally, automatic preset switches wait for
+the next beat.
+
 ## Build
 
 Requires CMake 3.21+, a C++17 compiler and [vcpkg](https://vcpkg.io):

@@ -17,6 +17,7 @@
 
 #include "audio_capture.h"
 #include "beat_analysis.h"
+#include "beat_tracker.h"
 #include "beat_window.h"
 #include "config.h"
 #include "load_menu.h"
@@ -44,6 +45,9 @@ struct App {
     Config cfg;
     fs::path configFile;
     BeatAnalysis analysis;
+    BeatTracker tracker;
+    double lastBeatWall = -1e9;
+    double switchDueSince = -1;  // automatic switch waiting for a beat
     BeatWindow beat;
     bool autoSwitch = false;  // next load is an automatic switch (uses blend_time_auto)
     PresetLibrary* library = nullptr;
@@ -603,6 +607,9 @@ int main(int argc, char* argv[]) {
         // MilkDrop-style analysis: hard cuts and timed preset switches
         app.analysis.setSampleRate(audio.sampleRate());
         app.analysis.addSamples(samples.data(), frames, app.cfg.beat.stereoMix);
+        app.tracker.setSampleRate(audio.sampleRate());
+        const int trackedBeats = app.tracker.process(samples.data(), frames, app.cfg.tracker);
+        if (trackedBeats > 0) app.lastBeatWall = now();
         const bool hardCut = app.analysis.update(fps, now(), app.locked, app.cfg.beat);
         app.beat.record(app.analysis, hardCut);
         if (app.cfg.presetsUseAnalysis) {
@@ -620,8 +627,14 @@ int main(int argc, char* argv[]) {
         if (hardCut) {
             next(app, true);
         } else if (!app.locked && app.analysis.presetTimeUp(now())) {
-            app.autoSwitch = true;
-            next(app, false);
+            // Optionally wait for the next tracked beat (at most 2 s)
+            if (app.switchDueSince < 0) app.switchDueSince = now();
+            const bool waitForBeat = app.cfg.tracker.alignSwitches && app.tracker.state != TrackState::Searching;
+            if (!waitForBeat || trackedBeats > 0 || now() - app.switchDueSince > 2.0) {
+                app.switchDueSince = -1;
+                app.autoSwitch = true;
+                next(app, false);
+            }
         }
 
         glViewport(0, 0, width, height);
@@ -640,8 +653,9 @@ int main(int argc, char* argv[]) {
 
         if (app.beat.isOpen()) {
             BeatWindow::Status st{app.current.name, app.locked, app.analysis.nextPresetTime() - now(),
-                                  audio.deviceName(), audio.sampleRate(), audio.captureAgeMs(), frameMs};
-            const auto act = app.beat.render(app.analysis, app.cfg, st);
+                                  audio.deviceName(), audio.sampleRate(), audio.captureAgeMs(), frameMs,
+                                  now() - app.lastBeatWall};
+            const auto act = app.beat.render(app.analysis, app.tracker, app.cfg, st);
             if (act.vsyncChanged) SDL_GL_SetSwapInterval(app.cfg.vsync ? 1 : 0);
             if (act.save) {
                 saveConfig(app.configFile, app.cfg);
