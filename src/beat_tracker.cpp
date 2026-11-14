@@ -41,7 +41,9 @@ BeatTracker::BeatTracker()
       input_(kFft, 0.0f),
       window_(kFft),
       buf_(kFft),
-      prevLog_(kFft / 2, 0.0f) {
+      prevLog_(kFft / 2, 0.0f),
+      clickHist_(kHistory, 0.0f),
+      subHist_(kHistory, 0.0f) {
     for (int i = 0; i < kFft; i++) window_[i] = 0.5f - 0.5f * std::cos(2.0f * kPi * i / kFft);
 }
 
@@ -129,20 +131,25 @@ void BeatTracker::hop(const TrackerSettings& s) {
     longRms_ = longRms_ * 0.995f + rms * 0.005f;
     silent = rms < 1e-4f || rms < longRms_ * 0.08f;
 
-    // --- Log-compressed spectral flux, full band (to ~10 kHz) and bass band (30-180 Hz)
+    // --- Log-compressed spectral flux: full band (to ~10 kHz), bass (30-180 Hz), click (1.5-5 kHz);
+    //     sub-bass (30-90 Hz) energy
     const float binHz = static_cast<float>(sampleRate_) / kFft;
     const int kMax = std::min(kFft / 2 - 1, static_cast<int>(10000.0f / binHz));
     const int lowLo = std::max(1, static_cast<int>(30.0f / binHz));
     const int lowHi = std::max(lowLo + 1, static_cast<int>(180.0f / binHz + 1.0f));
-    float fluxFull = 0, fluxLow = 0;
+    const int subHi = std::max(lowLo + 1, static_cast<int>(90.0f / binHz + 1.0f));
+    const int clickLo = static_cast<int>(1500.0f / binHz), clickHi = static_cast<int>(5000.0f / binHz);
+    float fluxFull = 0, fluxLow = 0, fluxClick = 0, subEnergy = 0;
     for (int k = 1; k <= kMax; k++) {
         const float mag = std::abs(buf_[k]) / (kFft * 0.25f);
         const float l = std::log1p(1000.0f * mag);
         const float d = l - prevLog_[k];
         prevLog_[k] = l;
+        if (k >= lowLo && k <= subHi) subEnergy += mag * mag;
         if (d > 0) {
             fluxFull += d;
             if (k >= lowLo && k <= lowHi) fluxLow += d;
+            if (k >= clickLo && k <= clickHi) fluxClick += d;
         }
     }
 
@@ -155,10 +162,28 @@ void BeatTracker::hop(const TrackerSettings& s) {
         const float full = fluxFull / (emaFull_ + 1e-6f);
         const float low = fluxLow / (emaLow_ + 1e-6f);
         value = (1.0f - s.bassWeight) * full + s.bassWeight * low;
-        odfPhase[i] = 0.75f * low + 0.25f * full;
+        emaClick_ += (fluxClick - emaClick_) * a;
+        emaSubE_ += (subEnergy - emaSubE_) * a;
+        clickHist_[i] = fluxClick / (emaClick_ + 1e-6f);
+        subHist_[i] = subEnergy / (emaSubE_ + 1e-9f);
     } else {
-        odfPhase[i] = 0;
+        clickHist_[i] = 0;
+        subHist_[i] = 0;
     }
+
+    // Kick detector for placing the beats: a click (1.5-5 kHz onset) followed within ~80 ms by
+    // rising sub-bass (30-90 Hz). The bassline has sub without the click, hi-hats click without
+    // sub, so both stop pulling the beat onto the off-beats. Needs D frames of look-ahead, so the
+    // value is written D frames back into the history.
+    const int D = std::max(2, static_cast<int>(0.08f * fr));
+    odfPhase[i] = 0;
+    if (n_ >= D) {
+        const long j = (n_ - D) % kHistory;
+        float rise = 0;
+        for (int k = 1; k <= D; k++) rise = std::max(rise, subHist_[(n_ - D + k) % kHistory] - subHist_[j]);
+        odfPhase[j] = std::sqrt(std::max(0.0f, clickHist_[j]) * rise);
+    }
+
     odf[i] = value;
     flags[i] = silent ? FlagSilent : 0;
 

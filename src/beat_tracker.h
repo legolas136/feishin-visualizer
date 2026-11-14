@@ -58,7 +58,7 @@ public:
     // History for display, indexed by frame % kHistory; frame() is the newest frame + 1
     long frame() const { return n_; }
     std::vector<float> odf, threshold;
-    std::vector<float> odfPhase;  // bass-weighted onset function used to place the beats (kick = beat)
+    std::vector<float> odfPhase;  // kick detector used to place the beats (lags the newest frame by ~80 ms)
     std::vector<uint8_t> flags;
     // Tempo curve for display: score per BPM from minBpm to maxBpm (1 BPM steps)
     std::vector<float> tempoCurve;
@@ -84,7 +84,8 @@ private:
     std::vector<float> prevLog_;
 
     long n_ = 0;  // number of onset frames processed
-    float emaFull_ = 0, emaLow_ = 0, longRms_ = 0;
+    float emaFull_ = 0, emaLow_ = 0, longRms_ = 0, emaClick_ = 0, emaSubE_ = 0;
+    std::vector<float> clickHist_, subHist_;  // normalised click onsets / sub-bass energy per frame
     long lastOnset_ = -1000;
     long coastSince_ = -1;  // frame when coasting started
     int beatsInHop_ = 0;

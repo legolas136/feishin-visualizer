@@ -346,7 +346,7 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     ImGui::SetCursorScreenPos(ImVec2(p0.x, p0.y + 2 * radius + 40));
 
     // --- Onset function history
-    ImGui::SeparatorText("Last 6 s: onset strength (white), threshold (yellow), bass onsets (red)");
+    ImGui::SeparatorText("Last 6 s: onset strength (white), threshold (yellow), kick detector (red)");
     {
         const ImVec2 size(ImGui::GetContentRegionAvail().x, 180);
         const ImVec2 q = ImGui::GetCursorScreenPos();

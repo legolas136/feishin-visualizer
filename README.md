@@ -59,7 +59,8 @@ left channel). Analysis window and stereo mix in the beat window affect switchin
 ## Beat tracker
 
 Separate from MilkDrop's bass/mid/treb, a real beat tracker (beat window, tab "Beat tracker"):
-log spectral-flux onset detection (with kick-drum weighting), tempo estimation by autocorrelation
+log spectral-flux onset detection, a kick detector that places the beats (a 1.5-5 kHz click followed by
+rising sub-bass, so basslines and hi-hats on the off-beats do not pull the beat), tempo estimation by autocorrelation
 with a tempo preference against half/double tempo, and a phase-locked loop that predicts beats,
 corrects phase and tempo on matching onsets, keeps the beat through silence ("coasting") and
 re-locks on tempo changes or new tracks. The tab shows a beat lamp, BPM, confidence, onset curve
