@@ -34,8 +34,8 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Libraries
 
-- libprojectM - LGPL-2.1 - https://github.com/projectM-visualizer/projectm
+- libprojectM - LGPL-2.1 - https://github.com/projectM-visualizer/projectm (4.1.8, modified by `ports/projectm/audio-levels-override.patch`)
 - SDL3 - zlib - https://libsdl.org
 - Dear ImGui - MIT - https://github.com/ocornut/imgui
 - GLEW - BSD/MIT - https://github.com/nigels-com/glew
-- Presets: projectM "Cream of the Crop" pack and MilkDrop texture pack (bundled in the Windows download)
+- Presets: projectM "Cream of the Crop" pack and MilkDrop texture pack (separate preset pack download)

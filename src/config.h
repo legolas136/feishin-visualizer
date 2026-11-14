@@ -11,6 +11,10 @@ struct Config {
 
     // Preset switching, blending and hard cuts (MilkDrop 2 settings and defaults)
     BeatSettings beat;
+    // Presets react to our analysis (window, stereo mix) instead of projectM's own (patched projectM)
+    bool presetsUseAnalysis = true;
+    // Scales how far bass/mid/treb move away from 1.0 for the presets (1 = MilkDrop)
+    float reactionStrength = 1.0f;
 
     int meshWidth = 48;
     int meshHeight = 36;

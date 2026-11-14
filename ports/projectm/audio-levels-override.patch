@@ -1,0 +1,99 @@
+diff -ruN a/src/api/include/projectM-4/audio.h b/src/api/include/projectM-4/audio.h
+--- a/src/api/include/projectM-4/audio.h	2026-11-14 17:30:20.475865078 +0000
++++ b/src/api/include/projectM-4/audio.h	2026-11-14 17:30:20.520366763 +0000
+@@ -93,6 +93,18 @@
+ PROJECTM_EXPORT void projectm_pcm_add_uint8(projectm_handle instance, const uint8_t* samples,
+                                             unsigned int count, projectm_channels channels);
+ 
++/**
++ * @brief Overrides the audio levels presets see (feishin-visualizer patch).
++ *
++ * levels holds 6 floats: bass, mid, treb, bass_att, mid_att, treb_att (1.0 = song average).
++ * vol and vol_att are derived from them. Pass NULL to use projectM's own analysis again.
++ * The values stay in effect until changed; set them before each projectm_opengl_render_frame().
++ *
++ * @param instance The projectM instance handle.
++ * @param levels Pointer to 6 floats, or NULL.
++ */
++PROJECTM_EXPORT void projectm_set_audio_levels_override(projectm_handle instance, const float* levels);
++
+ #ifdef __cplusplus
+ } // extern "C"
+ #endif
+diff -ruN a/src/libprojectM/ProjectM.cpp b/src/libprojectM/ProjectM.cpp
+--- a/src/libprojectM/ProjectM.cpp	2026-11-14 17:30:20.491991614 +0000
++++ b/src/libprojectM/ProjectM.cpp	2026-11-14 17:30:20.520963982 +0000
+@@ -104,6 +104,17 @@
+     // Update and retrieve audio data
+     m_audioStorage.UpdateFrameAudioData(m_timeKeeper->SecondsSinceLastFrame(), m_frameCount);
+     auto audioData = m_audioStorage.GetFrameAudioData();
++    if (m_audioLevelsOverride)
++    {
++        audioData.bass = m_audioLevels[0];
++        audioData.mid = m_audioLevels[1];
++        audioData.treb = m_audioLevels[2];
++        audioData.bassAtt = m_audioLevels[3];
++        audioData.midAtt = m_audioLevels[4];
++        audioData.trebAtt = m_audioLevels[5];
++        audioData.vol = (audioData.bass + audioData.mid + audioData.treb) * 0.333f;
++        audioData.volAtt = (audioData.bassAtt + audioData.midAtt + audioData.trebAtt) * 0.333f;
++    }
+ 
+     // Check if the preset isn't locked, and we've not already notified the user
+     if (!m_presetChangeNotified)
+@@ -301,6 +312,18 @@
+     return m_beatSensitivity;
+ }
+ 
++void ProjectM::SetAudioLevelsOverride(const float* levels)
++{
++    m_audioLevelsOverride = levels != nullptr;
++    if (levels != nullptr)
++    {
++        for (int i = 0; i < 6; i++)
++        {
++            m_audioLevels[i] = levels[i];
++        }
++    }
++}
++
+ auto ProjectM::SoftCutDuration() const -> double
+ {
+     return m_softCutDuration;
+diff -ruN a/src/libprojectM/ProjectM.hpp b/src/libprojectM/ProjectM.hpp
+--- a/src/libprojectM/ProjectM.hpp	2026-11-14 17:30:20.484182756 +0000
++++ b/src/libprojectM/ProjectM.hpp	2026-11-14 17:30:20.520639369 +0000
+@@ -105,6 +105,8 @@
+ 
+     void SetBeatSensitivity(float sensitivity);
+ 
++    void SetAudioLevelsOverride(const float* levels);
++
+     auto GetBeatSensitivity() const -> float;
+ 
+     auto SoftCutDuration() const -> double;
+@@ -195,6 +197,8 @@
+     bool m_hardCutEnabled{false};    //!< If true, hard cuts based on beat detection are enabled.
+     float m_hardCutSensitivity{2.0}; //!< Loudness sensitivity value for hard cuts.
+     float m_beatSensitivity{1.0};    //!< General beat sensitivity modifier for presets.
++    bool m_audioLevelsOverride{false}; //!< If true, m_audioLevels replace the analysed levels.
++    float m_audioLevels[6]{1, 1, 1, 1, 1, 1}; //!< bass, mid, treb, bass_att, mid_att, treb_att.
+     bool m_aspectCorrection{true};   //!< If true, corrects aspect ratio for non-rectangular windows.
+     float m_easterEgg{1.0};          //!< Random preset duration modifier. See TimeKeeper class.
+     float m_previousFrameVolume{};   //!< Volume in previous frame, used for hard cuts.
+diff -ruN a/src/libprojectM/ProjectMCWrapper.cpp b/src/libprojectM/ProjectMCWrapper.cpp
+--- a/src/libprojectM/ProjectMCWrapper.cpp	2026-11-14 17:30:20.500290265 +0000
++++ b/src/libprojectM/ProjectMCWrapper.cpp	2026-11-14 17:30:20.521101550 +0000
+@@ -171,6 +171,12 @@
+     projectMInstance->RenderFrame();
+ }
+ 
++void projectm_set_audio_levels_override(projectm_handle instance, const float* levels)
++{
++    auto projectMInstance = handle_to_instance(instance);
++    projectMInstance->SetAudioLevelsOverride(levels);
++}
++
+ void projectm_set_beat_sensitivity(projectm_handle instance, float sensitivity)
+ {
+     auto projectMInstance = handle_to_instance(instance);

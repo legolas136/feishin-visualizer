@@ -220,9 +220,14 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
         ImGui::SetItemTooltip("MilkDrop analyses the newest 576 samples (~13 ms) per frame. Longer windows\n"
                               "react a little later but are steadier and measure low bass better.");
     }
-    ImGui::TextDisabled("Presets get bass/mid/treb from projectM, which computes them exactly like MilkDrop\n"
-                        "(576 samples, left channel). The two options above currently change only\n"
-                        "preset switching and hard cuts, not how presets move.");
+    ImGui::Checkbox("presets react to this analysis", &cfg.presetsUseAnalysis);
+    ImGui::SetItemTooltip("On: presets get bass/mid/treb from the analysis shown here (window, stereo mix,\n"
+                          "reaction strength apply). Off: projectM's own analysis (same as MilkDrop, 576 / left).");
+    ImGui::BeginDisabled(!cfg.presetsUseAnalysis);
+    ImGui::SliderFloat("reaction strength", &cfg.reactionStrength, 0.0f, 3.0f, "%.2f");
+    ImGui::SetItemTooltip("How far bass/mid/treb move away from 1.0 for the presets.\n"
+                          "1 = MilkDrop, below 1 = calmer, above 1 = wilder.");
+    ImGui::EndDisabled();
 
     ImGui::SeparatorText("Latency / sync");
     const float frames = cfg.lowLatency ? 1.0f : (cfg.vsync ? 2.5f : 1.5f);
@@ -243,6 +248,7 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     ImGui::SameLine();
     if (ImGui::Button("MilkDrop defaults")) {
         s = BeatSettings{};
+        cfg.reactionStrength = 1.0f;
     }
 
     ImGui::End();

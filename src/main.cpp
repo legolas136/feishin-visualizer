@@ -605,6 +605,18 @@ int main(int argc, char* argv[]) {
         app.analysis.addSamples(samples.data(), frames, app.cfg.beat.stereoMix);
         const bool hardCut = app.analysis.update(fps, now(), app.locked, app.cfg.beat);
         app.beat.record(app.analysis, hardCut);
+        if (app.cfg.presetsUseAnalysis) {
+            // Presets react to our analysis (patched projectM), scaled around 1.0
+            const float k = app.cfg.reactionStrength;
+            float levels[6];
+            for (int i = 0; i < 3; i++) {
+                levels[i] = std::max(0.0f, 1.0f + (app.analysis.immRel[i] - 1.0f) * k);
+                levels[3 + i] = std::max(0.0f, 1.0f + (app.analysis.avgRel[i] - 1.0f) * k);
+            }
+            projectm_set_audio_levels_override(app.pm, levels);
+        } else {
+            projectm_set_audio_levels_override(app.pm, nullptr);
+        }
         if (hardCut) {
             next(app, true);
         } else if (!app.locked && app.analysis.presetTimeUp(now())) {

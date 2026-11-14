@@ -40,6 +40,9 @@ void saveConfig(const std::filesystem::path& path, const Config& c) {
         << "analysis_stereo_mix=" << b.stereoMix << "\n"
         << "# Samples per analysis: 576 = MilkDrop (fast, jumpy), 1024 / 2048 = calmer, better bass\n"
         << "analysis_window=" << b.windowSamples << "\n"
+        << "\n# Presets react to the analysis above (1) or to projectM's own (0); reaction strength 1 = MilkDrop\n"
+        << "presets_use_analysis=" << c.presetsUseAnalysis << "\n"
+        << "reaction_strength=" << c.reactionStrength << "\n"
         << "\n# Sync: low_latency = render without queued frames, audio_delay_ms = delay visuals\n"
         << "vsync=" << c.vsync << "\n"
         << "low_latency=" << c.lowLatency << "\n"
@@ -81,6 +84,8 @@ Config loadConfig(const std::filesystem::path& path) {
             else if (key == "analysis_stereo_mix") b.stereoMix = toBool(value);
             else if (key == "analysis_window") b.windowSamples = std::stoi(value);
             else if (key == "beat_sensitivity") {}  // removed: projectM 4.1 ignores it
+            else if (key == "presets_use_analysis") c.presetsUseAnalysis = toBool(value);
+            else if (key == "reaction_strength") c.reactionStrength = std::stof(value);
             else if (key == "mesh_width") c.meshWidth = std::stoi(value);
             else if (key == "mesh_height") c.meshHeight = std::stoi(value);
             else if (key == "fps") c.fps = std::stoi(value);
