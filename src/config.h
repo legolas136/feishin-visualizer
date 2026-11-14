@@ -3,15 +3,15 @@
 #include <filesystem>
 #include <string>
 
+#include "beat_analysis.h"
+
 struct Config {
     std::string presetDir = "presets";
     std::string textureDir = "textures";
 
-    double presetDuration = 30.0;
-    double softCutDuration = 3.0;
-    bool hardCutEnabled = true;
-    double hardCutDuration = 20.0;
-    float hardCutSensitivity = 2.0f;
+    // Preset switching, blending and hard cuts (MilkDrop 2 settings and defaults)
+    BeatSettings beat;
+    // projectM's own beat sensitivity: how strongly presets react (bass/mid/treb inside presets)
     float beatSensitivity = 1.0f;
 
     int meshWidth = 48;
@@ -20,11 +20,12 @@ struct Config {
     bool vsync = true;
     bool aspectCorrection = true;
 
-    bool shuffle = true;
     bool fullscreen = false;
     int windowWidth = 1280;
     int windowHeight = 720;
 };
 
-// Reads key=value pairs from `path`. Writes a file with the defaults if it does not exist.
+// Reads key=value pairs from `path`. Missing keys keep their defaults; the file is
+// (re)written afterwards so it always lists every setting.
 Config loadConfig(const std::filesystem::path& path);
+void saveConfig(const std::filesystem::path& path, const Config& c);

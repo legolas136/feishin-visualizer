@@ -29,6 +29,7 @@ Modelled on MilkDrop 2 (see the official MilkDrop 2 documentation by Ryan Geiss)
 | D | cycle shader lock: warp, composite, both, none (kept when presets change) |
 | F4 / F5 / F6 | preset name / fps / rating |
 | F8 | type or paste (Ctrl+V) a preset directory |
+| F12 | beat detection window: live bass/mid/treb, hard-cut threshold, spectrum, all switching settings |
 | Alt+Enter / F11 / double click | fullscreen |
 | Esc | close menu, leave fullscreen, quit |
 
@@ -38,8 +39,17 @@ Files next to the `.exe`: `config.ini` (settings), `ratings.ini` (preset ratings
 
 ## Settings
 
-`config.ini` is created next to the `.exe` on first start (preset duration, blend time, hard cuts,
-beat sensitivity, mesh size, FPS, shuffle, window). Restart after changes.
+`config.ini` is created next to the `.exe` on first start. Preset timing, blend times and hard cuts use
+MilkDrop 2's settings and defaults (16 s + up to 10 s random, blend 2.7 s auto / 1.7 s manual, hard
+cuts off, loudness threshold 2.5, half-life 60 s) and can be changed live in the beat window (F12).
+Mesh size, FPS and window settings need a restart.
+
+## Beat detection
+
+Bass/mid/treb levels, hard cuts and preset timing follow MilkDrop 2.25c (ported from its BSD source,
+see `THIRD_PARTY_NOTICES.md`): 576 samples per frame, the MilkDrop FFT with envelope and equalizer, three
+equal bands over 0-11 kHz, attack/decay averaging and the decaying hard-cut threshold. The values the
+presets themselves react to are still computed by projectM.
 
 ## Build
 

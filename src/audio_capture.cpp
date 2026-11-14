@@ -174,6 +174,7 @@ void AudioCapture::run() {
         if (ok) {
             const std::string name = friendlyName(device);
             setDeviceName(name);
+            sampleRate_ = static_cast<int>(fmt->nSamplesPerSec);
             std::cout << "Audio: capturing \"" << name << "\" (" << fmt->nSamplesPerSec << " Hz, "
                       << fmt->nChannels << " ch, " << fmt->wBitsPerSample << " bit)\n";
 

@@ -20,6 +20,8 @@ add_executable(feishin-visualizer
     src/main.cpp
     src/config.cpp
     src/audio_capture.cpp
+    src/beat_analysis.cpp
+    src/beat_window.cpp
     src/load_menu.cpp
     src/milk_text.cpp
     src/preset_library.cpp

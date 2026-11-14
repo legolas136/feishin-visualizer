@@ -20,6 +20,7 @@ public:
     void drain(std::vector<float>& out);
 
     std::string deviceName();
+    int sampleRate() const { return sampleRate_; }
 
 private:
     void run();
@@ -27,6 +28,7 @@ private:
     void setDeviceName(const std::string& name);
 
     std::atomic<bool> running_{true};
+    std::atomic<int> sampleRate_{48000};
     std::mutex mutex_;
     std::vector<float> buffer_;
     std::string deviceName_;

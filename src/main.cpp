@@ -16,6 +16,8 @@
 #include <vector>
 
 #include "audio_capture.h"
+#include "beat_analysis.h"
+#include "beat_window.h"
 #include "config.h"
 #include "load_menu.h"
 #include "milk_text.h"
@@ -38,6 +40,12 @@ enum ShaderLock { LockNone = 0, LockWarp = 1, LockComp = 2, LockBoth = 3 };
 struct App {
     projectm_handle pm = nullptr;
     SDL_Window* window = nullptr;
+    SDL_GLContext gl = nullptr;
+    Config cfg;
+    fs::path configFile;
+    BeatAnalysis analysis;
+    BeatWindow beat;
+    bool autoSwitch = false;  // next load is an automatic switch (uses blend_time_auto)
     PresetLibrary* library = nullptr;
     fs::path stateFile;
 
@@ -117,6 +125,10 @@ void updateTitle(App& app) {
 }
 
 void applyPreset(App& app, LoadedPreset preset, bool hardCut, bool pushHistory) {
+    const BeatSettings& b = app.cfg.beat;
+    projectm_set_soft_cut_duration(app.pm, app.autoSwitch ? b.blendTimeAuto : b.blendTimeUser);
+    app.autoSwitch = false;
+    app.analysis.restartTimer(now(), b);
     projectm_load_preset_data(app.pm, preset.text.c_str(), !hardCut);
     app.current = std::move(preset);
     if (pushHistory) {
@@ -269,7 +281,7 @@ void handlePathKey(App& app, const SDL_KeyboardEvent& key) {
 
 void handleKey(App& app, const SDL_KeyboardEvent& key, bool& running) {
     const bool alt = key.mod & SDL_KMOD_ALT;
-    if (alt && (key.sym == SDLK_RETURN || key.sym == SDLK_KP_ENTER)) {
+    if (alt && (key.key == SDLK_RETURN || key.key == SDLK_KP_ENTER)) {
         toggleFullscreen(app);
         return;
     }
@@ -316,6 +328,10 @@ void handleKey(App& app, const SDL_KeyboardEvent& key, bool& running) {
         case SDLK_F4: app.showPresetName = !app.showPresetName; break;
         case SDLK_F5: app.showFps = !app.showFps; break;
         case SDLK_F6: app.showRating = !app.showRating; break;
+        case SDLK_F12:
+            if (app.beat.isOpen()) app.beat.close();
+            else app.beat.open(app.window, app.gl);
+            break;
         case SDLK_F8:
             app.pathInput = true;
             app.pathText = app.library->directory().u8string();
@@ -350,6 +366,7 @@ const char* kHelp[] = {
     "D         cycle warp/composite shader lock",
     "F4        preset name    F5 fps    F6 rating",
     "F8        type a preset directory (Ctrl+V pastes)",
+    "F12       beat detection window (graphs + settings)",
     "ALT+ENTER / F11 / double click   fullscreen",
     "ESC       close menu, leave fullscreen, quit",
     "",
@@ -443,6 +460,9 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_GLContext gl = SDL_GL_CreateContext(app.window);
+    app.gl = gl;
+    app.cfg = cfg;
+    app.configFile = baseDir / "config.ini";
     if (!gl) {
         std::cerr << "OpenGL 3.3 context failed: " << SDL_GetError() << "\n";
         return 1;
@@ -490,11 +510,10 @@ int main(int argc, char* argv[]) {
     projectm_set_mesh_size(app.pm, cfg.meshWidth, cfg.meshHeight);
     projectm_set_fps(app.pm, cfg.fps);
     projectm_set_aspect_correction(app.pm, cfg.aspectCorrection);
-    projectm_set_preset_duration(app.pm, cfg.presetDuration);
-    projectm_set_soft_cut_duration(app.pm, cfg.softCutDuration);
-    projectm_set_hard_cut_enabled(app.pm, cfg.hardCutEnabled);
-    projectm_set_hard_cut_duration(app.pm, cfg.hardCutDuration);
-    projectm_set_hard_cut_sensitivity(app.pm, cfg.hardCutSensitivity);
+    // Switching and hard cuts are driven by our MilkDrop-style analysis, not by projectM.
+    projectm_set_preset_duration(app.pm, 1e7);
+    projectm_set_hard_cut_enabled(app.pm, false);
+    projectm_set_soft_cut_duration(app.pm, cfg.beat.blendTimeUser);
     projectm_set_beat_sensitivity(app.pm, cfg.beatSensitivity);
 
     const std::string texturePath = (baseDir / fs::u8path(cfg.textureDir)).u8string();
@@ -529,8 +548,9 @@ int main(int argc, char* argv[]) {
 
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
+            if (app.beat.handleEvent(e)) continue;
             ImGui_ImplSDL3_ProcessEvent(&e);
-            if (e.type == SDL_EVENT_QUIT) {
+            if (e.type == SDL_EVENT_QUIT || e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = false;
             } else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
                 SDL_GetWindowSizeInPixels(app.window, &width, &height);
@@ -569,6 +589,18 @@ int main(int argc, char* argv[]) {
             projectm_pcm_add_float(app.pm, samples.data() + offset * 2, count, PROJECTM_STEREO);
         }
 
+        // MilkDrop-style analysis: hard cuts and timed preset switches
+        app.analysis.setSampleRate(audio.sampleRate());
+        app.analysis.addSamples(samples.data(), frames, app.cfg.beat.stereoMix);
+        const bool hardCut = app.analysis.update(fps, now(), app.locked, app.cfg.beat);
+        app.beat.record(app.analysis, hardCut);
+        if (hardCut) {
+            next(app, true);
+        } else if (!app.locked && app.analysis.presetTimeUp(now())) {
+            app.autoSwitch = true;
+            next(app, false);
+        }
+
         glViewport(0, 0, width, height);
         projectm_opengl_render_frame(app.pm);
 
@@ -581,6 +613,17 @@ int main(int argc, char* argv[]) {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         SDL_GL_SwapWindow(app.window);
+
+        if (app.beat.isOpen()) {
+            BeatWindow::Status st{app.current.name, app.locked, app.analysis.nextPresetTime() - now(),
+                                  audio.deviceName(), audio.sampleRate()};
+            const auto act = app.beat.render(app.analysis, app.cfg.beat, app.cfg.beatSensitivity, st);
+            if (act.beatSensitivityChanged) projectm_set_beat_sensitivity(app.pm, app.cfg.beatSensitivity);
+            if (act.save) {
+                saveConfig(app.configFile, app.cfg);
+                notify(app, "settings saved to config.ini");
+            }
+        }
 
         if (!app.switchRequested && app.failedInARow > 0) app.failedInARow = 0;
 
@@ -596,6 +639,7 @@ int main(int argc, char* argv[]) {
     }
 
     saveState(app);
+    app.beat.close();
     projectm_destroy(app.pm);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
