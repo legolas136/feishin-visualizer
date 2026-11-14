@@ -1,8 +1,9 @@
 #include <GL/glew.h>
-#include <SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
-#include <imgui_impl_sdl2.h>
+#include <imgui_impl_sdl3.h>
 #include <projectM-4/projectM.h>
 
 #include <algorithm>
@@ -68,7 +69,7 @@ struct App {
     bool swallowText = false;  // the "l" that opened the menu also arrives as text
 };
 
-double now() { return SDL_GetTicks64() / 1000.0; }
+double now() { return SDL_GetTicks() / 1000.0; }
 
 void notify(App& app, const std::string& text) {
     app.notice = text;
@@ -180,10 +181,9 @@ void changeRating(App& app, int delta) {
     notify(app, "rating: " + std::to_string(r) + "/5");
 }
 
-void toggleFullscreen(App& app) {
-    const bool isFullscreen = SDL_GetWindowFlags(app.window) & SDL_WINDOW_FULLSCREEN_DESKTOP;
-    SDL_SetWindowFullscreen(app.window, isFullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-}
+bool isFullscreen(App& app) { return (SDL_GetWindowFlags(app.window) & SDL_WINDOW_FULLSCREEN) != 0; }
+
+void toggleFullscreen(App& app) { SDL_SetWindowFullscreen(app.window, !isFullscreen(app)); }
 
 void onSwitchRequested(bool isHardCut, void* userData) {
     auto* app = static_cast<App*>(userData);
@@ -203,12 +203,12 @@ void onSwitchFailed(const char* file, const char* message, void* userData) {
 // ---------------------------------------------------------------------------
 // Key handling
 
-void handleMenuKey(App& app, const SDL_Keysym& key) {
+void handleMenuKey(App& app, const SDL_KeyboardEvent& key) {
     LoadMenu& m = app.menu;
     const int page = 15;
-    switch (key.sym) {
+    switch (key.key) {
         case SDLK_ESCAPE:
-        case SDLK_l: m.open = false; break;
+        case SDLK_L: m.open = false; break;
         case SDLK_UP: m.move(-1); break;
         case SDLK_DOWN: m.move(1); break;
         case SDLK_PAGEUP: m.move(-page); break;
@@ -226,13 +226,13 @@ void handleMenuKey(App& app, const SDL_Keysym& key) {
             const auto entry = m.entries[m.selected];
             if (entry.isDir) {
                 m.show(entry.path, entry.label == ".." ? m.dir : fs::path{});
-            } else if (key.sym != SDLK_RIGHT) {
+            } else if (key.key != SDLK_RIGHT) {
                 // Loading from a folder makes it the pool for random/sequential switching.
                 if (app.library->directory() != m.dir) {
                     app.library->setDirectory(m.dir);
                     saveState(app);
                 }
-                loadPresetFile(app, entry.path, (key.mod & KMOD_SHIFT) != 0);
+                loadPresetFile(app, entry.path, (key.mod & SDL_KMOD_SHIFT) != 0);
             }
             break;
         }
@@ -240,8 +240,8 @@ void handleMenuKey(App& app, const SDL_Keysym& key) {
     }
 }
 
-void handlePathKey(App& app, const SDL_Keysym& key) {
-    switch (key.sym) {
+void handlePathKey(App& app, const SDL_KeyboardEvent& key) {
+    switch (key.key) {
         case SDLK_ESCAPE: app.pathInput = false; break;
         case SDLK_BACKSPACE:
             if (!app.pathText.empty()) app.pathText.pop_back();
@@ -255,8 +255,8 @@ void handlePathKey(App& app, const SDL_Keysym& key) {
             else notify(app, "Not a directory: " + app.pathText);
             break;
         }
-        case SDLK_v:
-            if (key.mod & KMOD_CTRL) {
+        case SDLK_V:
+            if (key.mod & SDL_KMOD_CTRL) {
                 if (char* clip = SDL_GetClipboardText()) {
                     app.pathText += clip;
                     SDL_free(clip);
@@ -267,8 +267,8 @@ void handlePathKey(App& app, const SDL_Keysym& key) {
     }
 }
 
-void handleKey(App& app, const SDL_Keysym& key, bool& running) {
-    const bool alt = key.mod & KMOD_ALT;
+void handleKey(App& app, const SDL_KeyboardEvent& key, bool& running) {
+    const bool alt = key.mod & SDL_KMOD_ALT;
     if (alt && (key.sym == SDLK_RETURN || key.sym == SDLK_KP_ENTER)) {
         toggleFullscreen(app);
         return;
@@ -276,24 +276,24 @@ void handleKey(App& app, const SDL_Keysym& key, bool& running) {
     if (app.pathInput) return handlePathKey(app, key);
     if (app.menu.open) return handleMenuKey(app, key);
 
-    switch (key.sym) {
+    switch (key.key) {
         case SDLK_ESCAPE:
             if (app.showHelp) app.showHelp = false;
-            else if (SDL_GetWindowFlags(app.window) & SDL_WINDOW_FULLSCREEN_DESKTOP) toggleFullscreen(app);
+            else if (isFullscreen(app)) toggleFullscreen(app);
             else running = false;
             break;
         case SDLK_F11: toggleFullscreen(app); break;
 
         // Preset navigation
         case SDLK_SPACE: next(app, false); break;
-        case SDLK_h: next(app, true); break;
+        case SDLK_H: next(app, true); break;
         case SDLK_BACKSPACE: back(app); break;
-        case SDLK_r:
+        case SDLK_R:
             app.library->random = !app.library->random;
             saveState(app);
             notify(app, app.library->random ? "random preset order" : "sequential preset order");
             break;
-        case SDLK_l:
+        case SDLK_L:
             app.menu.show(app.library->directory(), app.current.file);
             app.swallowText = true;
             break;
@@ -302,8 +302,8 @@ void handleKey(App& app, const SDL_Keysym& key, bool& running) {
         case SDLK_EQUALS: changeRating(app, 1); break;
         case SDLK_MINUS:
         case SDLK_KP_MINUS: changeRating(app, -1); break;
-        case SDLK_a: aggregate(app); break;
-        case SDLK_d:
+        case SDLK_A: aggregate(app); break;
+        case SDLK_D:
             app.shaderLock = (app.shaderLock + 1) % 4;
             notify(app, shaderLockName(app.shaderLock));
             break;
@@ -312,7 +312,7 @@ void handleKey(App& app, const SDL_Keysym& key, bool& running) {
         case SDLK_F1: app.showHelp = !app.showHelp; break;
         case SDLK_F2:
         case SDLK_F3:
-        case SDLK_t: notify(app, "song info needs the Feishin link (coming)"); break;
+        case SDLK_T: notify(app, "song info needs the Feishin link (coming)"); break;
         case SDLK_F4: app.showPresetName = !app.showPresetName; break;
         case SDLK_F5: app.showFps = !app.showFps; break;
         case SDLK_F6: app.showRating = !app.showRating; break;
@@ -417,16 +417,13 @@ int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << "\n";
         return 1;
     }
 
     fs::path baseDir = fs::current_path();
-    if (char* base = SDL_GetBasePath()) {
-        baseDir = fs::u8path(base);
-        SDL_free(base);
-    }
+    if (const char* base = SDL_GetBasePath()) baseDir = fs::u8path(base);
 
     const Config cfg = loadConfig(baseDir / "config.ini");
 
@@ -435,12 +432,11 @@ int main(int argc, char* argv[]) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-    Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
-    if (cfg.fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    if (cfg.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
 
     App app;
-    app.window = SDL_CreateWindow("feishin-visualizer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                  cfg.windowWidth, cfg.windowHeight, flags);
+    app.window = SDL_CreateWindow("feishin-visualizer", cfg.windowWidth, cfg.windowHeight, flags);
     if (!app.window) {
         std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << "\n";
         return 1;
@@ -479,7 +475,7 @@ int main(int argc, char* argv[]) {
         fc.SizePixels = fontSize;
         app.font = io.Fonts->AddFontDefault(&fc);
     }
-    ImGui_ImplSDL2_InitForOpenGL(app.window, gl);
+    ImGui_ImplSDL3_InitForOpenGL(app.window, gl);
     ImGui_ImplOpenGL3_Init("#version 330");
 
     app.pm = projectm_create();
@@ -489,7 +485,7 @@ int main(int argc, char* argv[]) {
     }
 
     int width = 0, height = 0;
-    SDL_GL_GetDrawableSize(app.window, &width, &height);
+    SDL_GetWindowSizeInPixels(app.window, &width, &height);
     projectm_set_window_size(app.pm, width, height);
     projectm_set_mesh_size(app.pm, cfg.meshWidth, cfg.meshHeight);
     projectm_set_fps(app.pm, cfg.fps);
@@ -522,36 +518,37 @@ int main(int argc, char* argv[]) {
     std::vector<float> samples;
     const unsigned int maxFrames = projectm_pcm_get_max_samples();
 
-    const Uint32 frameMs = (!cfg.vsync && cfg.fps > 0) ? 1000 / cfg.fps : 0;
+    SDL_StartTextInput(app.window);
+    const Uint64 frameMs = (!cfg.vsync && cfg.fps > 0) ? 1000 / cfg.fps : 0;
     bool running = true;
     float fps = 0;
     Uint64 lastFrame = SDL_GetPerformanceCounter();
 
     while (running) {
-        const Uint32 frameStart = SDL_GetTicks();
+        const Uint64 frameStart = SDL_GetTicks();
 
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            ImGui_ImplSDL2_ProcessEvent(&e);
-            if (e.type == SDL_QUIT) {
+            ImGui_ImplSDL3_ProcessEvent(&e);
+            if (e.type == SDL_EVENT_QUIT) {
                 running = false;
-            } else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                SDL_GL_GetDrawableSize(app.window, &width, &height);
+            } else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+                SDL_GetWindowSizeInPixels(app.window, &width, &height);
                 projectm_set_window_size(app.pm, width, height);
-            } else if (e.type == SDL_KEYDOWN) {
-                handleKey(app, e.key.keysym, running);
-            } else if (e.type == SDL_TEXTINPUT) {
+            } else if (e.type == SDL_EVENT_KEY_DOWN) {
+                handleKey(app, e.key, running);
+            } else if (e.type == SDL_EVENT_TEXT_INPUT) {
                 if (app.swallowText) app.swallowText = false;
                 else if (app.pathInput) app.pathText += e.text.text;
                 else if (app.menu.open) app.menu.jumpTo(e.text.text, now());
-            } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.clicks == 2) {
+            } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.clicks == 2) {
                 toggleFullscreen(app);
             }
         }
         app.swallowText = false;
 
         // Scroll Lock LED = preset lock, as in MilkDrop.
-        const bool scrollLock = (SDL_GetModState() & KMOD_SCROLL) != 0;
+        const bool scrollLock = (SDL_GetModState() & SDL_KMOD_SCROLL) != 0;
         if (scrollLock != app.locked) {
             app.locked = scrollLock;
             projectm_set_preset_locked(app.pm, app.locked);
@@ -576,7 +573,7 @@ int main(int argc, char* argv[]) {
         projectm_opengl_render_frame(app.pm);
 
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
         drawOverlay(app, static_cast<int>(io.DisplaySize.x), static_cast<int>(io.DisplaySize.y), fps);
         ImGui::Render();
@@ -593,17 +590,17 @@ int main(int argc, char* argv[]) {
         if (dt > 0) fps = fps * 0.95f + (1.0f / dt) * 0.05f;
 
         if (frameMs > 0) {
-            const Uint32 elapsed = SDL_GetTicks() - frameStart;
-            if (elapsed < frameMs) SDL_Delay(frameMs - elapsed);
+            const Uint64 elapsed = SDL_GetTicks() - frameStart;
+            if (elapsed < frameMs) SDL_Delay(static_cast<Uint32>(frameMs - elapsed));
         }
     }
 
     saveState(app);
     projectm_destroy(app.pm);
     ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
-    SDL_GL_DeleteContext(gl);
+    SDL_GL_DestroyContext(gl);
     SDL_DestroyWindow(app.window);
     SDL_Quit();
     return 0;

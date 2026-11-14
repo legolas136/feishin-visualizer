@@ -5,9 +5,9 @@
         "glew",
         {
             "name": "imgui",
-            "features": ["opengl3-binding", "sdl2-binding"]
+            "features": ["opengl3-binding", "sdl3-binding"]
         },
         "projectm",
-        "sdl2"
+        "sdl3"
     ]
 }

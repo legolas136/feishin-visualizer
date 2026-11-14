@@ -11,7 +11,7 @@ if(MSVC)
 endif()
 
 find_package(projectM4 REQUIRED)
-find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(imgui CONFIG REQUIRED)
@@ -27,8 +27,7 @@ add_executable(feishin-visualizer
 
 target_link_libraries(feishin-visualizer PRIVATE
     libprojectM::projectM
-    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    SDL3::SDL3
     GLEW::GLEW
     imgui::imgui
     OpenGL::GL

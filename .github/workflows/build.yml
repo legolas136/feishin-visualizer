@@ -30,10 +30,20 @@ jobs:
 
             - name: Configure
               shell: pwsh
-              run: >
-                  cmake -S . -B build -A x64
-                  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
-                  -DVCPKG_TARGET_TRIPLET=x64-windows-static
+              run: |
+                  cmake -S . -B build -A x64 `
+                      -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+                      -DVCPKG_TARGET_TRIPLET=x64-windows-static 2>&1 | Tee-Object -FilePath configure.log
+                  if ($LASTEXITCODE -ne 0) {
+                      # Surface vcpkg/CMake errors as annotations (readable without log access)
+                      Select-String -Path configure.log -Pattern 'error' -Context 0,2 |
+                          Select-Object -First 10 |
+                          ForEach-Object { Write-Output "::error::$(($_.Line + ' ' + ($_.Context.PostContext -join ' ')).Trim())" }
+                      Get-ChildItem build -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
+                          Where-Object { $_.FullName -match 'vcpkg' } | Select-Object -First 3 |
+                          ForEach-Object { Write-Output "::error::vcpkg log $($_.Name): $((Get-Content $_.FullName -Tail 5) -join ' | ')" }
+                      exit 1
+                  }
 
             - name: Build
               shell: pwsh
