@@ -43,6 +43,9 @@ void AudioCapture::push(const float* stereo, size_t frames) {
 
 #include <windows.h>
 
+// Defines (not just declares) PKEY_Device_FriendlyName and the KSDATAFORMAT GUIDs.
+#include <initguid.h>
+
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
