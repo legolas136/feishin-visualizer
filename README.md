@@ -53,7 +53,8 @@ Mesh size, FPS and window settings need a restart.
 Bass/mid/treb levels, hard cuts and preset timing follow MilkDrop 2.25c (ported from its BSD source,
 see `THIRD_PARTY_NOTICES.md`): 576 samples per frame, the MilkDrop FFT with envelope and equalizer, three
 equal bands over 0-11 kHz, attack/decay averaging and the decaying hard-cut threshold. The values the
-presets themselves react to are still computed by projectM.
+presets themselves react to come from projectM 4.1, which uses the same MilkDrop algorithm (576 samples,
+left channel). Analysis window and stereo mix in the beat window affect switching and hard cuts only.
 
 ## Build
 

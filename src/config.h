@@ -11,8 +11,6 @@ struct Config {
 
     // Preset switching, blending and hard cuts (MilkDrop 2 settings and defaults)
     BeatSettings beat;
-    // projectM's own beat sensitivity: how strongly presets react (bass/mid/treb inside presets)
-    float beatSensitivity = 1.0f;
 
     int meshWidth = 48;
     int meshHeight = 36;

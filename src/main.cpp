@@ -514,7 +514,6 @@ int main(int argc, char* argv[]) {
     projectm_set_preset_duration(app.pm, 1e7);
     projectm_set_hard_cut_enabled(app.pm, false);
     projectm_set_soft_cut_duration(app.pm, cfg.beat.blendTimeUser);
-    projectm_set_beat_sensitivity(app.pm, cfg.beatSensitivity);
 
     const std::string texturePath = (baseDir / fs::u8path(cfg.textureDir)).u8string();
     const char* texturePaths[] = {texturePath.c_str()};
@@ -632,7 +631,6 @@ int main(int argc, char* argv[]) {
                                   audio.deviceName(), audio.sampleRate(), audio.captureAgeMs(), frameMs};
             const auto act = app.beat.render(app.analysis, app.cfg, st);
             if (act.vsyncChanged) SDL_GL_SetSwapInterval(app.cfg.vsync ? 1 : 0);
-            if (act.beatSensitivityChanged) projectm_set_beat_sensitivity(app.pm, app.cfg.beatSensitivity);
             if (act.save) {
                 saveConfig(app.configFile, app.cfg);
                 notify(app, "settings saved to config.ini");

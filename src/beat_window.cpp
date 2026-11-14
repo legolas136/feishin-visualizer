@@ -90,7 +90,6 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     Actions actions;
     if (!window_) return actions;
     BeatSettings& s = cfg.beat;
-    float& beatSensitivity = cfg.beatSensitivity;
 
     // Capture age: average and maximum per second
     const double t = SDL_GetTicks() / 1000.0;
@@ -221,11 +220,9 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
         ImGui::SetItemTooltip("MilkDrop analyses the newest 576 samples (~13 ms) per frame. Longer windows\n"
                               "react a little later but are steadier and measure low bass better.");
     }
-    if (ImGui::SliderFloat("preset reaction strength (projectM)", &beatSensitivity, 0.0f, 5.0f, "%.2f")) {
-        actions.beatSensitivityChanged = true;
-    }
-    ImGui::SetItemTooltip("projectM still computes the bass/mid/treb values inside the presets itself.\n"
-                          "This scales how strongly presets react.");
+    ImGui::TextDisabled("Presets get bass/mid/treb from projectM, which computes them exactly like MilkDrop\n"
+                        "(576 samples, left channel). The two options above currently change only\n"
+                        "preset switching and hard cuts, not how presets move.");
 
     ImGui::SeparatorText("Latency / sync");
     const float frames = cfg.lowLatency ? 1.0f : (cfg.vsync ? 2.5f : 1.5f);
@@ -246,8 +243,6 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     ImGui::SameLine();
     if (ImGui::Button("MilkDrop defaults")) {
         s = BeatSettings{};
-        beatSensitivity = 1.0f;
-        actions.beatSensitivityChanged = true;
     }
 
     ImGui::End();

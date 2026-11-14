@@ -25,7 +25,6 @@ public:
 
     struct Actions {
         bool save = false;
-        bool beatSensitivityChanged = false;
         bool vsyncChanged = false;
     };
 
