@@ -1,0 +1,187 @@
+diff -ruN c/src/api/include/projectM-4/audio.h d/src/api/include/projectM-4/audio.h
+--- c/src/api/include/projectM-4/audio.h	2026-11-14 21:17:44.635401884 +0000
++++ d/src/api/include/projectM-4/audio.h	2026-11-14 21:17:44.663131025 +0000
+@@ -105,6 +105,13 @@
+  */
+ PROJECTM_EXPORT void projectm_set_audio_levels_override(projectm_handle instance, const float* levels);
+ 
++/**
++ * @brief Statistics of the process-wide shader program binary cache (feishin-visualizer patch).
++ * @param hits Programs loaded from the cache instead of being compiled.
++ * @param misses Programs compiled (and added to the cache).
++ */
++PROJECTM_EXPORT void projectm_get_shader_cache_stats(unsigned int* hits, unsigned int* misses);
++
+ #ifdef __cplusplus
+ } // extern "C"
+ #endif
+diff -ruN c/src/libprojectM/ProjectMCWrapper.cpp d/src/libprojectM/ProjectMCWrapper.cpp
+--- c/src/libprojectM/ProjectMCWrapper.cpp	2026-11-14 21:17:44.642730619 +0000
++++ d/src/libprojectM/ProjectMCWrapper.cpp	2026-11-14 21:17:54.263242596 +0000
+@@ -3,6 +3,7 @@
+ #include <projectM-4/projectM.h>
+ 
+ #include <Audio/AudioConstants.hpp>
++#include <Renderer/Shader.hpp>
+ 
+ #include <cstring>
+ #include <sstream>
+@@ -171,6 +172,21 @@
+     projectMInstance->RenderFrame();
+ }
+ 
++void projectm_get_shader_cache_stats(unsigned int* hits, unsigned int* misses)
++{
++    unsigned int h{};
++    unsigned int m{};
++    libprojectM::Renderer::GetProgramCacheStats(h, m);
++    if (hits != nullptr)
++    {
++        *hits = h;
++    }
++    if (misses != nullptr)
++    {
++        *misses = m;
++    }
++}
++
+ void projectm_set_audio_levels_override(projectm_handle instance, const float* levels)
+ {
+     auto projectMInstance = handle_to_instance(instance);
+diff -ruN c/src/libprojectM/Renderer/Shader.cpp d/src/libprojectM/Renderer/Shader.cpp
+--- c/src/libprojectM/Renderer/Shader.cpp	2026-11-14 21:17:44.619889195 +0000
++++ d/src/libprojectM/Renderer/Shader.cpp	2026-11-14 21:17:44.662847594 +0000
+@@ -2,8 +2,39 @@
+ 
+ #include <glm/gtc/type_ptr.hpp>
+ 
++#include <mutex>
++#include <string>
++#include <unordered_map>
+ #include <vector>
+ 
++// feishin-visualizer: process-wide cache of linked program binaries, keyed by the full shader
++// sources. A second projectM instance on a background thread (own GL context) loads upcoming
++// presets, so their programs are already compiled when the visible instance switches; repeated
++// presets also hit the cache. Needs glGetProgramBinary/glProgramBinary (GL 4.1 or
++// ARB_get_program_binary); without it everything compiles as before.
++namespace {
++struct ProgramBinary
++{
++    GLenum format{};
++    std::vector<char> data;
++};
++std::mutex g_programCacheMutex;
++std::unordered_map<std::string, ProgramBinary> g_programCache;
++unsigned int g_programCacheHits{};
++unsigned int g_programCacheMisses{};
++
++bool ProgramBinariesSupported()
++{
++#if defined(_WIN32)
++    return glProgramBinary != nullptr && glGetProgramBinary != nullptr && glProgramParameteri != nullptr;
++#elif defined(GL_PROGRAM_BINARY_LENGTH)
++    return true;
++#else
++    return false;
++#endif
++}
++} // namespace
++
+ namespace libprojectM {
+ namespace Renderer {
+ 
+@@ -20,9 +51,51 @@
+     }
+ }
+ 
++void GetProgramCacheStats(unsigned int& hits, unsigned int& misses)
++{
++    std::lock_guard<std::mutex> lock(g_programCacheMutex);
++    hits = g_programCacheHits;
++    misses = g_programCacheMisses;
++}
++
+ void Shader::CompileProgram(const std::string& vertexShaderSource,
+                             const std::string& fragmentShaderSource)
+ {
++    const bool useCache = ProgramBinariesSupported();
++    std::string cacheKey;
++    if (useCache)
++    {
++        cacheKey = vertexShaderSource;
++        cacheKey.push_back('\0');
++        cacheKey += fragmentShaderSource;
++
++        ProgramBinary binary;
++        bool found = false;
++        {
++            std::lock_guard<std::mutex> lock(g_programCacheMutex);
++            auto it = g_programCache.find(cacheKey);
++            if (it != g_programCache.end())
++            {
++                binary = it->second;
++                found = true;
++            }
++        }
++        if (found)
++        {
++            glProgramBinary(m_shaderProgram, binary.format, binary.data.data(), static_cast<GLsizei>(binary.data.size()));
++            GLint linked{GL_FALSE};
++            glGetProgramiv(m_shaderProgram, GL_LINK_STATUS, &linked);
++            std::lock_guard<std::mutex> lock(g_programCacheMutex);
++            if (linked == GL_TRUE)
++            {
++                g_programCacheHits++;
++                return;
++            }
++            g_programCache.erase(cacheKey); // e.g. driver update: compile normally
++        }
++        glProgramParameteri(m_shaderProgram, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
++    }
++
+     auto vertexShader = CompileShader(vertexShaderSource, GL_VERTEX_SHADER);
+     auto fragmentShader = CompileShader(fragmentShaderSource, GL_FRAGMENT_SHADER);
+ 
+@@ -41,6 +114,26 @@
+     glGetProgramiv(m_shaderProgram, GL_LINK_STATUS, &programLinked);
+     if (programLinked == GL_TRUE)
+     {
++        if (useCache)
++        {
++            GLint length{};
++            glGetProgramiv(m_shaderProgram, GL_PROGRAM_BINARY_LENGTH, &length);
++            if (length > 0)
++            {
++                ProgramBinary binary;
++                binary.data.resize(static_cast<size_t>(length));
++                GLsizei written{};
++                glGetProgramBinary(m_shaderProgram, length, &written, &binary.format, binary.data.data());
++                binary.data.resize(static_cast<size_t>(written));
++                std::lock_guard<std::mutex> lock(g_programCacheMutex);
++                if (g_programCache.size() >= 2048)
++                {
++                    g_programCache.clear();
++                }
++                g_programCache[cacheKey] = std::move(binary);
++                g_programCacheMisses++;
++            }
++        }
+         return;
+     }
+ 
+diff -ruN c/src/libprojectM/Renderer/Shader.hpp d/src/libprojectM/Renderer/Shader.hpp
+--- c/src/libprojectM/Renderer/Shader.hpp	2026-11-14 21:17:44.628008836 +0000
++++ d/src/libprojectM/Renderer/Shader.hpp	2026-11-14 21:17:44.662995808 +0000
+@@ -19,6 +19,11 @@
+ namespace Renderer {
+ 
+ /**
++ * @brief Program binary cache statistics (feishin-visualizer patch).
++ */
++void GetProgramCacheStats(unsigned int& hits, unsigned int& misses);
++
++/**
+  * @brief Shader compilation exception.
+  */
+ class ShaderException : public std::exception

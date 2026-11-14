@@ -78,6 +78,13 @@ coasts. The pulse is held at the full mix once the lock is sure; it goes off at 
 automatic estimate (where the sound changes) is applied only when it is clearly sure, because in
 electronic music the kick is identical on every beat.
 
+## Smooth preset switches
+
+Compiling a preset's shaders takes 50-230 ms and used to freeze the picture on every switch. The
+next preset is chosen in advance and loaded by an invisible second projectM instance on a background
+thread; its linked shader programs go into a process-wide program binary cache (patched projectM), so
+the visible switch only loads binaries. The console / beat window show `(prewarmed)` for such switches.
+
 ## Build
 
 Requires CMake 3.21+, a C++17 compiler and [vcpkg](https://vcpkg.io):

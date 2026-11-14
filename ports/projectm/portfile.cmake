@@ -7,6 +7,7 @@ vcpkg_from_github(
     PATCHES
         macos-pkgconfig.patch
         audio-levels-override.patch  # feishin-visualizer: projectm_set_audio_levels_override()
+        shader-binary-cache.patch    # feishin-visualizer: program binary cache for background warm-up
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS

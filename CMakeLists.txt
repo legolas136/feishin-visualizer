@@ -26,6 +26,7 @@ add_executable(feishin-visualizer
     src/load_menu.cpp
     src/milk_text.cpp
     src/preset_library.cpp
+    src/preset_prefetcher.cpp
 )
 
 target_link_libraries(feishin-visualizer PRIVATE

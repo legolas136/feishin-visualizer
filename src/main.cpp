@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,7 @@
 #include "load_menu.h"
 #include "milk_text.h"
 #include "preset_library.h"
+#include "preset_prefetcher.h"
 
 namespace fs = std::filesystem;
 
@@ -58,6 +60,12 @@ struct App {
     double pickMs = 0, readMs = 0, loadMs = 0, firstFrameMs = 0;
     int framesSinceLoad = 1000;
     std::string switchTiming;
+    // Upcoming preset, warmed up in the background (shaders precompiled)
+    PresetPrefetcher prefetcher;
+    bool prefetching = false;
+    std::optional<fs::path> upcoming;
+    std::string upcomingText;
+    bool switchedPrewarmed = false;
     BeatWindow beat;
     bool autoSwitch = false;  // next load is an automatic switch (uses blend_time_auto)
     PresetLibrary* library = nullptr;
@@ -155,6 +163,13 @@ void applyPreset(App& app, LoadedPreset preset, bool hardCut, bool pushHistory) 
     }
     updateTitle(app);
     std::cout << (hardCut ? "Hard cut: " : "Preset: ") << app.current.name << "\n";
+
+    // Choose the next preset now and let the background instance compile its shaders
+    if (app.prefetching) {
+        app.upcoming = app.library->pickNext(app.current.file);
+        app.upcomingText = app.upcoming ? readTextFile(*app.upcoming) : std::string();
+        if (!app.upcomingText.empty()) app.prefetcher.prefetch(app.upcomingText);
+    }
 }
 
 // Loads a preset file, keeping locked shaders (D) from the current preset.
@@ -179,7 +194,16 @@ void loadPresetFile(App& app, const fs::path& file, bool hardCut) {
 
 void next(App& app, bool hardCut) {
     const Uint64 t0 = SDL_GetTicksNS();
-    const auto file = app.library->pickNext(app.current.file);
+    // Use the preset chosen (and warmed up) in advance, if it is still in the current pool order
+    std::optional<fs::path> file;
+    app.switchedPrewarmed = false;
+    if (app.upcoming) {
+        file = app.upcoming;
+        app.switchedPrewarmed = app.prefetcher.isWarm(app.upcomingText);
+    } else {
+        file = app.library->pickNext(app.current.file);
+    }
+    app.upcoming.reset();
     app.pickMs = (SDL_GetTicksNS() - t0) / 1e6;
     if (file) loadPresetFile(app, *file, hardCut);
 }
@@ -565,6 +589,9 @@ int main(int argc, char* argv[]) {
     app.stateFile = baseDir / "state.ini";
     loadState(app);
     std::cout << "Presets: " << library.size() << " in " << library.directory().u8string() << "\n";
+    app.prefetching = app.prefetcher.start(app.window, gl, texturePath);
+    std::cout << (app.prefetching ? "Prefetch: shaders of the next preset compile in the background\n"
+                                  : "Prefetch: not available, presets compile on switch\n");
     if (library.size() == 0) notify(app, "No presets found: unpack the preset pack next to the .exe (see README) or press F8");
     next(app, true);
 
@@ -716,8 +743,10 @@ int main(int argc, char* argv[]) {
             // Shader compilation of a new preset often happens in its first frame
             app.firstFrameMs = (SDL_GetTicksNS() - renderStart) / 1e6;
             char buf[160];
-            std::snprintf(buf, sizeof(buf), "pick %.1f ms, read %.1f ms, projectM load %.1f ms, first frame %.1f ms",
-                          app.pickMs, app.readMs, app.loadMs, app.firstFrameMs);
+            std::snprintf(buf, sizeof(buf), "pick %.1f ms, read %.1f ms, projectM load %.1f ms, first frame %.1f ms%s",
+                          app.pickMs, app.readMs, app.loadMs, app.firstFrameMs,
+                          app.switchedPrewarmed ? " (prewarmed)" : "");
+            app.switchedPrewarmed = false;
             app.switchTiming = buf;
             std::cout << "  switch: " << buf << "\n";
         }
@@ -769,6 +798,7 @@ int main(int argc, char* argv[]) {
     }
 
     saveState(app);
+    app.prefetcher.stop();
     app.beat.close();
     projectm_destroy(app.pm);
     ImGui_ImplOpenGL3_Shutdown();
