@@ -1,0 +1,55 @@
+name: build
+
+on:
+    push:
+    pull_request:
+    workflow_dispatch:
+
+jobs:
+    windows:
+        runs-on: windows-latest
+        env:
+            VCPKG_ROOT: ${{ github.workspace }}\..\vcpkg
+            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\..\vcpkg-cache
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Restore vcpkg binary cache
+              uses: actions/cache@v4
+              with:
+                  path: ${{ github.workspace }}\..\vcpkg-cache
+                  key: vcpkg-x64-windows-static-${{ hashFiles('vcpkg.json') }}-v1
+                  restore-keys: vcpkg-x64-windows-static-
+
+            - name: Set up vcpkg
+              shell: pwsh
+              run: |
+                  git clone --depth 1 https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
+                  & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+                  New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+
+            - name: Configure
+              shell: pwsh
+              run: >
+                  cmake -S . -B build -A x64
+                  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
+                  -DVCPKG_TARGET_TRIPLET=x64-windows-static
+
+            - name: Build
+              run: cmake --build build --config Release
+
+            - name: Package
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force dist | Out-Null
+                  Copy-Item build\Release\feishin-visualizer.exe dist\
+                  git clone --depth 1 https://github.com/projectM-visualizer/presets-cream-of-the-crop "$env:RUNNER_TEMP\presets"
+                  git clone --depth 1 https://github.com/projectM-visualizer/presets-milkdrop-texture-pack "$env:RUNNER_TEMP\textures"
+                  Remove-Item -Recurse -Force "$env:RUNNER_TEMP\presets\.git", "$env:RUNNER_TEMP\textures\.git"
+                  Copy-Item -Recurse "$env:RUNNER_TEMP\presets" dist\presets
+                  Copy-Item -Recurse "$env:RUNNER_TEMP\textures\textures" dist\textures
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: feishin-visualizer-windows
+                  path: dist

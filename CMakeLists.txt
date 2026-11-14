@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.21)
+
+project(feishin-visualizer LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(MSVC)
+    # Static CRT, matches the x64-windows-static vcpkg triplet used in CI.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+find_package(projectM4 REQUIRED)
+find_package(SDL2 CONFIG REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(OpenGL REQUIRED)
+
+add_executable(feishin-visualizer
+    src/main.cpp
+    src/config.cpp
+    src/audio_capture.cpp
+)
+
+target_link_libraries(feishin-visualizer PRIVATE
+    libprojectM::projectM
+    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    GLEW::GLEW
+    OpenGL::GL
+)
+
+if(WIN32)
+    target_compile_definitions(feishin-visualizer PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(feishin-visualizer PRIVATE ole32)
+endif()

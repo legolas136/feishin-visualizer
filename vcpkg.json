@@ -1,0 +1,5 @@
+{
+    "name": "feishin-visualizer",
+    "version-string": "0.1.0",
+    "dependencies": ["glew", "projectm", "sdl2"]
+}
