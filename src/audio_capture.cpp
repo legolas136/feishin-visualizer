@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 
@@ -192,9 +193,16 @@ void AudioCapture::run() {
         if (ok) {
             const std::string name = friendlyName(device);
             setDeviceName(name);
-            sampleRate_ = static_cast<int>(fmt->nSamplesPerSec);
+            // All analysis (MilkDrop, projectM, beat tracker) is built for 44.1/48 kHz: average
+            // high rates (88.2-192 kHz) down by an integer factor to at most 50 kHz.
+            const int decimate = std::max(1, static_cast<int>(std::ceil(fmt->nSamplesPerSec / 50000.0)));
+            sampleRate_ = static_cast<int>(fmt->nSamplesPerSec) / decimate;
             std::cout << "Audio: capturing \"" << name << "\" (" << fmt->nSamplesPerSec << " Hz, "
-                      << fmt->nChannels << " ch, " << fmt->wBitsPerSample << " bit)\n";
+                      << fmt->nChannels << " ch, " << fmt->wBitsPerSample << " bit)";
+            if (decimate > 1) std::cout << ", analysed at " << sampleRate_ << " Hz";
+            std::cout << "\n";
+            float accL = 0, accR = 0;
+            int accCount = 0;
 
             const int channels = fmt->nChannels;
             const int bytesPerSample = fmt->wBitsPerSample / 8;
@@ -227,21 +235,27 @@ void AudioCapture::run() {
                         break;
                     }
 
-                    stereo.resize(static_cast<size_t>(frames) * 2);
-                    if (flags & AUDCLNT_BUFFERFLAGS_SILENT) {
-                        std::fill(stereo.begin(), stereo.end(), 0.0f);
-                    } else {
-                        for (UINT32 f = 0; f < frames; f++) {
+                    stereo.clear();
+                    const bool silentPacket = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
+                    for (UINT32 f = 0; f < frames; f++) {
+                        float l = 0, r = 0;
+                        if (!silentPacket) {
                             const BYTE* frame = data + static_cast<size_t>(f) * channels * bytesPerSample;
-                            const float l = readSample(frame, type);
-                            const float r = channels > 1 ? readSample(frame + bytesPerSample, type) : l;
-                            stereo[f * 2] = l;
-                            stereo[f * 2 + 1] = r;
+                            l = readSample(frame, type);
+                            r = channels > 1 ? readSample(frame + bytesPerSample, type) : l;
+                        }
+                        accL += l;
+                        accR += r;
+                        if (++accCount == decimate) {
+                            stereo.push_back(accL / decimate);
+                            stereo.push_back(accR / decimate);
+                            accL = accR = 0;
+                            accCount = 0;
                         }
                     }
                     const double rate = static_cast<double>(fmt->nSamplesPerSec);
                     const double endTime = qpcPosition > 0 ? qpcPosition / 1e7 + frames / rate : clockSeconds();
-                    push(stereo.data(), frames, endTime);
+                    if (!stereo.empty()) push(stereo.data(), stereo.size() / 2, endTime);
 
                     capture->ReleaseBuffer(frames);
                     if (FAILED(capture->GetNextPacketSize(&packet))) {

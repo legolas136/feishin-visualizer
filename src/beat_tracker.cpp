@@ -183,12 +183,6 @@ void BeatTracker::hop(const TrackerSettings& s) {
 
     n_++;
 
-    if (silent) {
-        if (silentSince_ < 0) silentSince_ = n_;
-    } else {
-        silentSince_ = -1;
-    }
-
     if (n_ % 24 == 0) estimateTempo(s);
     track(s);
 }
@@ -287,7 +281,9 @@ void BeatTracker::estimateTempo(const TrackerSettings& s) {
     for (const float r : {2.0f, 0.5f, 1.5f, 2.0f / 3.0f, 3.0f, 1.0f / 3.0f}) {
         if (std::fabs(ratio / r - 1.0f) < 0.04f) octave = true;
     }
-    if (estimateConfidence >= s.acquireConfidence && !sameTempo && !octave && agreeingEstimates_ >= 1) {
+    // Switching away from a lock needs a clearly better estimate than the first lock did
+    const float relockConfidence = s.acquireConfidence + 0.15f;
+    if (estimateConfidence >= relockConfidence && !sameTempo && !octave && agreeingEstimates_ >= 1) {
         mismatchSeconds += 24.0f / fr;
         if (mismatchSeconds >= s.relockSeconds) acquire(s, lag);
     } else {
@@ -372,7 +368,7 @@ void BeatTracker::track(const TrackerSettings& s) {
         period_ = std::clamp(period_ + s.tempoGain * e, lockPeriod_ * 0.9f, lockPeriod_ * 1.1f);
         confidence = confidence * 0.85f + 0.15f;
         flags[bestFrame % kHistory] |= FlagMatched;
-        if (state == TrackState::Coasting) state = TrackState::Locked;
+        if (state == TrackState::Coasting && confidence >= 0.45f) state = TrackState::Locked;
     } else if (!quiet) {
         confidence *= 0.85f;
     }
@@ -382,12 +378,14 @@ void BeatTracker::track(const TrackerSettings& s) {
     nextBeat_ = beatPos + period_;
     emitted_ = false;
 
-    // State changes
-    if (quiet) {
-        if (state == TrackState::Locked) state = TrackState::Coasting;
-        if (silentSince_ >= 0 && (n_ - silentSince_) / fr > s.coastSeconds) state = TrackState::Searching;
-    } else if (confidence < 0.3f) {
-        state = TrackState::Searching;  // lost: re-acquire from the tempo estimate
+    // State changes (soft lock): silence or weak matches only make us coast on the last tempo.
+    // A new tempo takes over via the re-lock check in estimateTempo(); coasting too long gives up.
+    if (state == TrackState::Locked && (quiet || confidence < 0.3f)) {
+        state = TrackState::Coasting;
+        coastSince_ = n_;
+    }
+    if (state == TrackState::Coasting && (n_ - coastSince_) / fr > s.coastSeconds) {
+        state = TrackState::Searching;
         agreeingEstimates_ = 0;
     }
 }

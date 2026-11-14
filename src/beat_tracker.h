@@ -86,7 +86,7 @@ private:
     long n_ = 0;  // number of onset frames processed
     float emaFull_ = 0, emaLow_ = 0, longRms_ = 0;
     long lastOnset_ = -1000;
-    long silentSince_ = -1;
+    long coastSince_ = -1;  // frame when coasting started
     int beatsInHop_ = 0;
 
     // PLL

@@ -126,7 +126,7 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
     ImGui::Text("Preset: %s%s", status.presetName.c_str(), status.locked ? "  [locked]" : "");
     if (status.locked) ImGui::Text("Next preset: locked (Scroll Lock)");
     else ImGui::Text("Next preset in %.1f s", std::max(0.0, status.secondsToNextPreset));
-    ImGui::Text("Audio: %s, %d Hz", status.audioDevice.empty() ? "no device" : status.audioDevice.c_str(),
+    ImGui::Text("Audio: %s, analysed at %d Hz", status.audioDevice.empty() ? "no device" : status.audioDevice.c_str(),
                 status.sampleRate);
 
     // --- Levels as MilkDrop presets see them
