@@ -86,10 +86,24 @@ void BeatWindow::record(const BeatAnalysis& a, bool hardCut) {
     pos_ = (pos_ + 1) % kHistory;
 }
 
-BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, BeatSettings& s, float& beatSensitivity,
-                                       const Status& status) {
+BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const Status& status) {
     Actions actions;
     if (!window_) return actions;
+    BeatSettings& s = cfg.beat;
+    float& beatSensitivity = cfg.beatSensitivity;
+
+    // Capture age: average and maximum per second
+    const double t = SDL_GetTicks() / 1000.0;
+    ageSum_ += status.captureAgeMs;
+    ageMax_ = std::max(ageMax_, status.captureAgeMs);
+    ageCount_++;
+    if (t - ageWindowStart_ >= 1.0) {
+        ageAvgShown_ = ageSum_ / std::max(1, ageCount_);
+        ageMaxShown_ = ageMax_;
+        ageSum_ = ageMax_ = 0;
+        ageCount_ = 0;
+        ageWindowStart_ = t;
+    }
 
     ImGuiContext* previous = ImGui::GetCurrentContext();
     SDL_GLContext prevGl = SDL_GL_GetCurrentContext();
@@ -199,6 +213,20 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, BeatSettings& s, f
     }
     ImGui::SetItemTooltip("projectM still computes the bass/mid/treb values inside the presets itself.\n"
                           "This scales how strongly presets react.");
+
+    ImGui::SeparatorText("Latency / sync");
+    const float frames = cfg.lowLatency ? 1.0f : (cfg.vsync ? 2.5f : 1.5f);
+    ImGui::Text("Audio capture -> analysis: %.0f ms avg, %.0f ms max", ageAvgShown_, ageMaxShown_);
+    ImGui::Text("Frame time: %.1f ms   estimated render -> screen: ~%.0f ms (+ monitor)", status.frameMs,
+                status.frameMs * frames);
+    ImGui::Text("Delay setting: %.0f ms   => visuals lag the captured audio by ~%.0f ms",
+                cfg.audioDelayMs, ageAvgShown_ + status.frameMs * frames + cfg.audioDelayMs);
+    ImGui::TextDisabled("Captured audio is what Windows sends to the device. Devices with their own lag\n"
+                        "(wireless/Bluetooth, large interface buffers) play it later: raise the delay for them.");
+    if (ImGui::Checkbox("VSync", &cfg.vsync)) actions.vsyncChanged = true;
+    ImGui::SameLine();
+    ImGui::Checkbox("low latency (no queued frames)", &cfg.lowLatency);
+    ImGui::SliderFloat("audio delay (ms)", &cfg.audioDelayMs, 0.0f, 500.0f, "%.0f");
 
     ImGui::Spacing();
     if (ImGui::Button("Save to config.ini")) actions.save = true;

@@ -8,8 +8,12 @@ device plays, following device changes). Receiving audio directly from Feishin i
 
 ## Download (Windows)
 
-GitHub > Actions > latest `build` run > artifact `feishin-visualizer-windows`. Unzip and start
-`feishin-visualizer.exe`. Presets (Cream of the Crop) and textures are included.
+GitHub > Actions > latest green `build` run > artifact `feishin-visualizer-windows` (program only, a few
+MB). Unzip next to your existing `presets` and `textures` folders and start `feishin-visualizer.exe`.
+
+Preset pack (once): Actions > build > "Run workflow", tick "presets", then download the artifact
+`feishin-visualizer-presets` (Cream of the Crop presets + MilkDrop textures) and unzip it into the same
+folder.
 
 ## Keys
 
@@ -29,7 +33,7 @@ Modelled on MilkDrop 2 (see the official MilkDrop 2 documentation by Ryan Geiss)
 | D | cycle shader lock: warp, composite, both, none (kept when presets change) |
 | F4 / F5 / F6 | preset name / fps / rating |
 | F8 | type or paste (Ctrl+V) a preset directory |
-| F12 | beat detection window: live bass/mid/treb, hard-cut threshold, spectrum, all switching settings |
+| F12 | beat detection window: live bass/mid/treb, hard-cut threshold, spectrum, switching settings, latency and sync |
 | Alt+Enter / F11 / double click | fullscreen |
 | Esc | close menu, leave fullscreen, quit |
 

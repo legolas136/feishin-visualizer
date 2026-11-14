@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "beat_analysis.h"
+#include "config.h"
 
 struct ImGuiContext;
 
@@ -18,11 +19,14 @@ public:
         double secondsToNextPreset = 0;
         std::string audioDevice;
         int sampleRate = 0;
+        float captureAgeMs = 0;  // age of the newest audio when analysed
+        float frameMs = 0;       // render time per frame
     };
 
     struct Actions {
         bool save = false;
         bool beatSensitivityChanged = false;
+        bool vsyncChanged = false;
     };
 
     ~BeatWindow();
@@ -37,7 +41,7 @@ public:
     // Records one frame of analysis for the graphs (call every frame, also when closed).
     void record(const BeatAnalysis& a, bool hardCut);
 
-    Actions render(const BeatAnalysis& a, BeatSettings& s, float& beatSensitivity, const Status& status);
+    Actions render(const BeatAnalysis& a, Config& cfg, const Status& status);
 
 private:
     SDL_Window* window_ = nullptr;
@@ -53,4 +57,9 @@ private:
     };
     std::vector<Sample> history_ = std::vector<Sample>(kHistory, Sample{{1, 1, 1}, {1, 1, 1}, 0, false});
     int pos_ = 0;
+
+    // capture age statistics over the last second
+    float ageMax_ = 0, ageMaxShown_ = 0, ageSum_ = 0, ageAvgShown_ = 0;
+    int ageCount_ = 0;
+    double ageWindowStart_ = 0;
 };

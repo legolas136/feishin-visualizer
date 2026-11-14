@@ -18,6 +18,8 @@ struct Config {
     int meshHeight = 36;
     int fps = 60;
     bool vsync = true;
+    bool lowLatency = false;    // glFinish after each frame: no frames queued in the driver
+    float audioDelayMs = 0.0f;  // delay audio into the analysis/visuals (for outputs with lag, e.g. wireless)
     bool aspectCorrection = true;
 
     bool fullscreen = false;

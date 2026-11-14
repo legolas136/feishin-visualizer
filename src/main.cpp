@@ -528,17 +528,18 @@ int main(int argc, char* argv[]) {
     app.stateFile = baseDir / "state.ini";
     loadState(app);
     std::cout << "Presets: " << library.size() << " in " << library.directory().u8string() << "\n";
-    if (library.size() == 0) notify(app, "No .milk presets found - press L or F8");
+    if (library.size() == 0) notify(app, "No presets found: unpack the preset pack next to the .exe (see README) or press F8");
     next(app, true);
 
     std::cout << "Press F1 for keys\n";
 
     AudioCapture audio;
     std::vector<float> samples;
+    std::deque<float> delayLine;  // audio_delay_ms
+    float frameMs = 0;
     const unsigned int maxFrames = projectm_pcm_get_max_samples();
 
     SDL_StartTextInput(app.window);
-    const Uint64 frameMs = (!cfg.vsync && cfg.fps > 0) ? 1000 / cfg.fps : 0;
     bool running = true;
     float fps = 0;
     Uint64 lastFrame = SDL_GetPerformanceCounter();
@@ -583,6 +584,17 @@ int main(int argc, char* argv[]) {
         }
 
         audio.drain(samples);
+        if (app.cfg.audioDelayMs > 0.5f || !delayLine.empty()) {
+            // Hold audio back so visuals line up with outputs that play late.
+            const size_t hold = 2 * static_cast<size_t>(app.cfg.audioDelayMs * audio.sampleRate() / 1000.0f);
+            delayLine.insert(delayLine.end(), samples.begin(), samples.end());
+            samples.clear();
+            if (delayLine.size() > hold) {
+                const size_t release = (delayLine.size() - hold) & ~static_cast<size_t>(1);
+                samples.assign(delayLine.begin(), delayLine.begin() + release);
+                delayLine.erase(delayLine.begin(), delayLine.begin() + release);
+            }
+        }
         const size_t frames = samples.size() / 2;
         for (size_t offset = 0; offset < frames; offset += maxFrames) {
             const auto count = static_cast<unsigned int>(std::min<size_t>(maxFrames, frames - offset));
@@ -613,11 +625,13 @@ int main(int argc, char* argv[]) {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         SDL_GL_SwapWindow(app.window);
+        if (app.cfg.lowLatency) glFinish();  // wait for the GPU: no frames queued ahead
 
         if (app.beat.isOpen()) {
             BeatWindow::Status st{app.current.name, app.locked, app.analysis.nextPresetTime() - now(),
-                                  audio.deviceName(), audio.sampleRate()};
-            const auto act = app.beat.render(app.analysis, app.cfg.beat, app.cfg.beatSensitivity, st);
+                                  audio.deviceName(), audio.sampleRate(), audio.captureAgeMs(), frameMs};
+            const auto act = app.beat.render(app.analysis, app.cfg, st);
+            if (act.vsyncChanged) SDL_GL_SetSwapInterval(app.cfg.vsync ? 1 : 0);
             if (act.beatSensitivityChanged) projectm_set_beat_sensitivity(app.pm, app.cfg.beatSensitivity);
             if (act.save) {
                 saveConfig(app.configFile, app.cfg);
@@ -630,11 +644,15 @@ int main(int argc, char* argv[]) {
         const Uint64 t = SDL_GetPerformanceCounter();
         const float dt = static_cast<float>(t - lastFrame) / static_cast<float>(SDL_GetPerformanceFrequency());
         lastFrame = t;
-        if (dt > 0) fps = fps * 0.95f + (1.0f / dt) * 0.05f;
+        if (dt > 0) {
+            fps = fps * 0.95f + (1.0f / dt) * 0.05f;
+            frameMs = frameMs * 0.95f + dt * 1000.0f * 0.05f;
+        }
 
-        if (frameMs > 0) {
+        const Uint64 frameLimitMs = (!app.cfg.vsync && app.cfg.fps > 0) ? 1000 / app.cfg.fps : 0;
+        if (frameLimitMs > 0) {
             const Uint64 elapsed = SDL_GetTicks() - frameStart;
-            if (elapsed < frameMs) SDL_Delay(static_cast<Uint32>(frameMs - elapsed));
+            if (elapsed < frameLimitMs) SDL_Delay(static_cast<Uint32>(frameLimitMs - elapsed));
         }
     }
 

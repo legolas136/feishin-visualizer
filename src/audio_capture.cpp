@@ -5,8 +5,24 @@
 #include <cstdint>
 #include <iostream>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // Keep at most ~1 s of stereo audio if the renderer stalls.
 static constexpr size_t kMaxBufferedSamples = 48000 * 2;
+
+// Seconds on the clock WASAPI uses for its capture timestamps (QueryPerformanceCounter).
+static double clockSeconds() {
+#ifdef _WIN32
+    LARGE_INTEGER c, f;
+    QueryPerformanceCounter(&c);
+    QueryPerformanceFrequency(&f);
+    return static_cast<double>(c.QuadPart) / static_cast<double>(f.QuadPart);
+#else
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+#endif
+}
 
 AudioCapture::AudioCapture() : thread_([this] { run(); }) {}
 
@@ -19,6 +35,9 @@ void AudioCapture::drain(std::vector<float>& out) {
     std::lock_guard<std::mutex> lock(mutex_);
     out.swap(buffer_);
     buffer_.clear();
+    if (!out.empty() && newestSampleTime_ > 0) {
+        captureAgeMs_ = static_cast<float>((clockSeconds() - newestSampleTime_) * 1000.0);
+    }
 }
 
 std::string AudioCapture::deviceName() {
@@ -31,8 +50,9 @@ void AudioCapture::setDeviceName(const std::string& name) {
     deviceName_ = name;
 }
 
-void AudioCapture::push(const float* stereo, size_t frames) {
+void AudioCapture::push(const float* stereo, size_t frames, double endTime) {
     std::lock_guard<std::mutex> lock(mutex_);
+    newestSampleTime_ = endTime;
     buffer_.insert(buffer_.end(), stereo, stereo + frames * 2);
     if (buffer_.size() > kMaxBufferedSamples) {
         buffer_.erase(buffer_.begin(), buffer_.end() - kMaxBufferedSamples);
@@ -40,8 +60,6 @@ void AudioCapture::push(const float* stereo, size_t frames) {
 }
 
 #ifdef _WIN32
-
-#include <windows.h>
 
 // Defines (not just declares) PKEY_Device_FriendlyName and the KSDATAFORMAT GUIDs.
 #include <initguid.h>
@@ -203,7 +221,8 @@ void AudioCapture::run() {
                     BYTE* data = nullptr;
                     UINT32 frames = 0;
                     DWORD flags = 0;
-                    if (FAILED(capture->GetBuffer(&data, &frames, &flags, nullptr, nullptr))) {
+                    UINT64 qpcPosition = 0;  // capture time of the first frame, 100 ns units
+                    if (FAILED(capture->GetBuffer(&data, &frames, &flags, nullptr, &qpcPosition))) {
                         failed = true;
                         break;
                     }
@@ -220,7 +239,9 @@ void AudioCapture::run() {
                             stereo[f * 2 + 1] = r;
                         }
                     }
-                    push(stereo.data(), frames);
+                    const double rate = static_cast<double>(fmt->nSamplesPerSec);
+                    const double endTime = qpcPosition > 0 ? qpcPosition / 1e7 + frames / rate : clockSeconds();
+                    push(stereo.data(), frames, endTime);
 
                     capture->ReleaseBuffer(frames);
                     if (FAILED(capture->GetNextPacketSize(&packet))) {

@@ -40,11 +40,14 @@ void saveConfig(const std::filesystem::path& path, const Config& c) {
         << "analysis_stereo_mix=" << b.stereoMix << "\n"
         << "\n# How strongly presets react to the music (projectM)\n"
         << "beat_sensitivity=" << c.beatSensitivity << "\n"
+        << "\n# Sync: low_latency = render without queued frames, audio_delay_ms = delay visuals\n"
+        << "vsync=" << c.vsync << "\n"
+        << "low_latency=" << c.lowLatency << "\n"
+        << "audio_delay_ms=" << c.audioDelayMs << "\n"
         << "\n# Warp mesh resolution (higher = smoother, slower). Restart after changes below.\n"
         << "mesh_width=" << c.meshWidth << "\n"
         << "mesh_height=" << c.meshHeight << "\n"
         << "fps=" << c.fps << "\n"
-        << "vsync=" << c.vsync << "\n"
         << "aspect_correction=" << c.aspectCorrection << "\n"
         << "\nfullscreen=" << c.fullscreen << "\n"
         << "window_width=" << c.windowWidth << "\n"
@@ -81,6 +84,8 @@ Config loadConfig(const std::filesystem::path& path) {
             else if (key == "mesh_height") c.meshHeight = std::stoi(value);
             else if (key == "fps") c.fps = std::stoi(value);
             else if (key == "vsync") c.vsync = toBool(value);
+            else if (key == "low_latency") c.lowLatency = toBool(value);
+            else if (key == "audio_delay_ms") c.audioDelayMs = std::stof(value);
             else if (key == "aspect_correction") c.aspectCorrection = toBool(value);
             else if (key == "fullscreen") c.fullscreen = toBool(value);
             else if (key == "window_width") c.windowWidth = std::stoi(value);
