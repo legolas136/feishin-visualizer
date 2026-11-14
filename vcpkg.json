@@ -1,5 +1,13 @@
 {
     "name": "feishin-visualizer",
-    "version-string": "0.1.0",
-    "dependencies": ["glew", "projectm", "sdl2"]
+    "version-string": "0.2.0",
+    "dependencies": [
+        "glew",
+        {
+            "name": "imgui",
+            "features": ["opengl3-binding", "sdl2-binding"]
+        },
+        "projectm",
+        "sdl2"
+    ]
 }

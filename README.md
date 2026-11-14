@@ -13,14 +13,28 @@ GitHub > Actions > latest `build` run > artifact `feishin-visualizer-windows`. U
 
 ## Keys
 
+Modelled on MilkDrop 2 (see the official MilkDrop 2 documentation by Ryan Geiss).
+
 | Key | Action |
 | --- | --- |
-| Right / N | next preset (soft transition) |
-| Left / P | previous preset |
+| F1 | help |
+| Space | next preset (blend) |
 | H | next preset (hard cut) |
-| L | lock / unlock current preset |
-| F / F11 / double click | fullscreen |
-| Esc | leave fullscreen, then quit |
+| Backspace | previous preset (history of 64) |
+| R | random / sequential order |
+| L | load menu: arrows, PgUp/PgDn, Home/End, type to jump, Enter load, Shift+Enter hard cut, Left/Backspace = parent folder. Loading from a folder makes it the pool for switching. |
+| Scroll Lock | lock current preset (keyboard LED on = locked) |
+| + / - | rate current preset 0-5 (rating = weight for random picks, 0 = never) |
+| A | mash-up: random preset + warp shader of a second + composite shader of a third |
+| D | cycle shader lock: warp, composite, both, none (kept when presets change) |
+| F4 / F5 / F6 | preset name / fps / rating |
+| F8 | type or paste (Ctrl+V) a preset directory |
+| Alt+Enter / F11 / double click | fullscreen |
+| Esc | close menu, leave fullscreen, quit |
+
+Planned with the Feishin link: F2/F3/T (song title/length), Z X C V B (playback), arrows (volume/seek).
+
+Files next to the `.exe`: `config.ini` (settings), `ratings.ini` (preset ratings), `state.ini` (random mode, current folder).
 
 ## Settings
 
