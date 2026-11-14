@@ -100,7 +100,8 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     if (t - ageWindowStart_ >= 1.0) {
         ageAvgShown_ = ageSum_ / std::max(1, ageCount_);
         ageMaxShown_ = ageMax_;
-        ageSum_ = ageMax_ = 0;
+        ageSum_ = 0;
+        ageMax_ = -1e9f;
         ageCount_ = 0;
         ageWindowStart_ = t;
     }
@@ -140,7 +141,8 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
     }
 
     // --- History graph: bass/mid/treb, their sum/3 and the hard cut threshold
-    ImGui::SeparatorText("Last 10 s: bass / mid / treb, white = (bass+mid+treb)/3, yellow = hard cut threshold");
+    ImGui::SeparatorText("Last 10 s: bass / mid / treb, white = average of the three, yellow = hard cut threshold");
+    ImGui::Checkbox("show smoothed values (bass_att / mid_att / treb_att, what most presets use)", &showAtt_);
     {
         const ImVec2 size(ImGui::GetContentRegionAvail().x, 200);
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
@@ -158,13 +160,15 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
             const Sample& cur = history_[(pos_ + k) % kHistory];
             const float x0 = p0.x + (k - 1) * dx, x1 = p0.x + k * dx;
             if (cur.cut) dl->AddLine(ImVec2(x1, p0.y), ImVec2(x1, p0.y + size.y), IM_COL32(255, 60, 255, 255), 2.0f);
+            const float* pv = showAtt_ ? prev.avgRel : prev.immRel;
+            const float* cv = showAtt_ ? cur.avgRel : cur.immRel;
             for (int i = 0; i < 3; i++) {
-                dl->AddLine(ImVec2(x0, yOf(prev.immRel[i])), ImVec2(x1, yOf(cur.immRel[i])), kBandColors[i]);
+                dl->AddLine(ImVec2(x0, yOf(pv[i])), ImVec2(x1, yOf(cv[i])), kBandColors[i]);
             }
-            const float sumPrev = (prev.immRel[0] + prev.immRel[1] + prev.immRel[2]) / 3.0f;
-            const float sumCur = (cur.immRel[0] + cur.immRel[1] + cur.immRel[2]) / 3.0f;
+            const float sumPrev = (pv[0] + pv[1] + pv[2]) / 3.0f;
+            const float sumCur = (cv[0] + cv[1] + cv[2]) / 3.0f;
             dl->AddLine(ImVec2(x0, yOf(sumPrev)), ImVec2(x1, yOf(sumCur)), IM_COL32(255, 255, 255, 255), 1.5f);
-            if (s.hardCutsEnabled) {
+            if (s.hardCutsEnabled && !showAtt_) {
                 dl->AddLine(ImVec2(x0, yOf(prev.thresh)), ImVec2(x1, yOf(cur.thresh)), IM_COL32(255, 220, 60, 255), 2.0f);
             }
         }
@@ -208,6 +212,15 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, Config& cfg, const
 
     ImGui::SeparatorText("Analysis");
     ImGui::Checkbox("mix left + right (MilkDrop: left only)", &s.stereoMix);
+    {
+        const int sizes[3] = {576, 1024, 2048};
+        const char* labels[3] = {"576 samples (MilkDrop, fast and jumpy)", "1024 samples (calmer)",
+                                 "2048 samples (calm, best bass)"};
+        int current = s.windowSamples == 2048 ? 2 : (s.windowSamples == 1024 ? 1 : 0);
+        if (ImGui::Combo("analysis window", &current, labels, 3)) s.windowSamples = sizes[current];
+        ImGui::SetItemTooltip("MilkDrop analyses the newest 576 samples (~13 ms) per frame. Longer windows\n"
+                              "react a little later but are steadier and measure low bass better.");
+    }
     if (ImGui::SliderFloat("preset reaction strength (projectM)", &beatSensitivity, 0.0f, 5.0f, "%.2f")) {
         actions.beatSensitivityChanged = true;
     }

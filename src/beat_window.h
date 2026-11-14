@@ -59,7 +59,8 @@ private:
     int pos_ = 0;
 
     // capture age statistics over the last second
-    float ageMax_ = 0, ageMaxShown_ = 0, ageSum_ = 0, ageAvgShown_ = 0;
+    bool showAtt_ = false;  // graph: raw bass/mid/treb or the smoothed _att values
+    float ageMax_ = -1e9f, ageMaxShown_ = 0, ageSum_ = 0, ageAvgShown_ = 0;
     int ageCount_ = 0;
     double ageWindowStart_ = 0;
 };

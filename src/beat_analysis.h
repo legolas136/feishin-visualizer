@@ -19,12 +19,12 @@ struct BeatSettings {
     float hardCutLoudnessThresh = 2.5f;    // fHardCutLoudnessThresh
     float hardCutHalflife = 60.0f;         // fHardCutHalflife (s)
     bool stereoMix = false;                // false = left channel only, like MilkDrop
+    int windowSamples = 576;               // samples per analysis (MilkDrop/Winamp: 576)
 };
 
 class BeatAnalysis {
 public:
-    static constexpr int kSamples = 576;   // waveform samples per frame (Winamp vis API)
-    static constexpr int kFreqs = 512;     // MY_FFT_SAMPLES
+    static constexpr int kMaxWindow = 2048;
 
     BeatAnalysis();
 
@@ -43,23 +43,26 @@ public:
     // Current values (as MilkDrop presets see them)
     std::array<float, 3> imm{}, avg{}, longAvg{}, immRel{}, avgRel{};
     float hardCutThresh = 0;  // current (decaying) threshold; a cut fires when sum(immRel) > 3 * this
-    std::array<float, kFreqs> spectrum{};
+    std::vector<float> spectrum;    // FFT output, 0 Hz .. sampleRate/2
     std::array<int, 4> bandEdges{};  // spectrum bin indices: bass [0,1), mid [1,2), treb [2,3)
     double nextPresetTime() const { return nextPresetTime_; }
 
 private:
+    void configure(int window);
     void fft(const float* in, float* out);
 
-    std::vector<float> ring_;  // last kSamples mono/left samples
+    std::vector<float> ring_;  // newest kMaxWindow samples
     size_t ringPos_ = 0;
     int sampleRate_ = 44100;
     long frame_ = 0;
     double nextPresetTime_ = -1;
 
-    // FFT tables (fft.cpp)
-    static constexpr int kN = kFreqs * 2;  // NFREQ
-    std::array<int, kN> bitrev_{};
+    // FFT tables (fft.cpp), rebuilt when the window size changes
+    int window_ = 0;  // samples in
+    int n_ = 0;       // NFREQ (FFT size)
+    std::vector<int> bitrev_;
     std::vector<std::array<float, 2>> cossin_;
-    std::array<float, kSamples> envelope_{};
-    std::array<float, kFreqs> equalize_{};
+    std::vector<float> envelope_;
+    std::vector<float> equalize_;
+    std::vector<float> real_, imag_, wave_;
 };
