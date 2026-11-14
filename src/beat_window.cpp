@@ -90,6 +90,9 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
                                        const Status& status) {
     Actions actions;
     if (!window_) return actions;
+    const Uint64 nowNs = SDL_GetTicksNS();
+    if (nowNs - lastRenderNs_ < 33000000ull) return actions;
+    lastRenderNs_ = nowNs;
     BeatSettings& s = cfg.beat;
 
     // Capture age: average and maximum per second

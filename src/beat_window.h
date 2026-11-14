@@ -63,6 +63,9 @@ private:
     };
     std::vector<Sample> history_ = std::vector<Sample>(kHistory, Sample{{1, 1, 1}, {1, 1, 1}, 0, false});
     int pos_ = 0;
+    // Redraw at most ~30 times per second: below any monitor's refresh rate, so Windows never
+    // makes the swap wait (a window on a 60 Hz screen would otherwise throttle the visualizer).
+    Uint64 lastRenderNs_ = 0;
 
     // capture age statistics over the last second
     bool showAtt_ = false;  // graph: raw bass/mid/treb or the smoothed _att values
