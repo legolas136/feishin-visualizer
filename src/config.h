@@ -17,6 +17,14 @@ struct Config {
     bool presetsUseAnalysis = true;
     // Scales how far bass/mid/treb move away from 1.0 for the presets (1 = MilkDrop)
     float reactionStrength = 1.0f;
+    // Tracked beat -> presets: pulses mixed into bass (or all bands), see beat window "Beat tracker"
+    float beatInjectMix = 0.5f;     // 0 = off, 1 = presets see only the beat pulse
+    float beatInjectHeight = 1.5f;  // pulse peak above the song average (1.0)
+    float beatInjectDecay = 0.15f;  // seconds
+    bool beatInjectAllBands = false;
+    // Switch presets every N tracked beats instead of by time (0 = off)
+    int switchEveryBeats = 0;
+    bool switchOnBeatHardCut = false;
 
     int meshWidth = 48;
     int meshHeight = 36;

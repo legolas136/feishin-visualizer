@@ -55,6 +55,14 @@ void saveConfig(const std::filesystem::path& path, const Config& c) {
         << "tracker_coast_seconds=" << c.tracker.coastSeconds << "\n"
         << "tracker_relock_seconds=" << c.tracker.relockSeconds << "\n"
         << "tracker_align_switches=" << c.tracker.alignSwitches << "\n"
+        << "\n# Tracked beat in presets: pulse mix (0 = off), height, decay (s), 1 = all bands (0 = bass)\n"
+        << "beat_inject_mix=" << c.beatInjectMix << "\n"
+        << "beat_inject_height=" << c.beatInjectHeight << "\n"
+        << "beat_inject_decay=" << c.beatInjectDecay << "\n"
+        << "beat_inject_all_bands=" << c.beatInjectAllBands << "\n"
+        << "# Switch presets every N tracked beats (0 = by time), 1 = as hard cut on the beat\n"
+        << "switch_every_beats=" << c.switchEveryBeats << "\n"
+        << "switch_on_beat_hard_cut=" << c.switchOnBeatHardCut << "\n"
         << "\n# Sync: low_latency = render without queued frames, audio_delay_ms = delay visuals\n"
         << "vsync=" << c.vsync << "\n"
         << "low_latency=" << c.lowLatency << "\n"
@@ -107,6 +115,12 @@ Config loadConfig(const std::filesystem::path& path) {
             else if (key == "tracker_coast_seconds") c.tracker.coastSeconds = std::stof(value);
             else if (key == "tracker_relock_seconds") c.tracker.relockSeconds = std::stof(value);
             else if (key == "tracker_align_switches") c.tracker.alignSwitches = toBool(value);
+            else if (key == "beat_inject_mix") c.beatInjectMix = std::stof(value);
+            else if (key == "beat_inject_height") c.beatInjectHeight = std::stof(value);
+            else if (key == "beat_inject_decay") c.beatInjectDecay = std::stof(value);
+            else if (key == "beat_inject_all_bands") c.beatInjectAllBands = toBool(value);
+            else if (key == "switch_every_beats") c.switchEveryBeats = std::stoi(value);
+            else if (key == "switch_on_beat_hard_cut") c.switchOnBeatHardCut = toBool(value);
             else if (key == "presets_use_analysis") c.presetsUseAnalysis = toBool(value);
             else if (key == "reaction_strength") c.reactionStrength = std::stof(value);
             else if (key == "mesh_width") c.meshWidth = std::stoi(value);

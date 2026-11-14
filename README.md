@@ -66,6 +66,10 @@ re-locks on tempo changes or new tracks. The tab shows a beat lamp, BPM, confide
 and tempo candidates; all parameters are adjustable. Optionally, automatic preset switches wait for
 the next beat.
 
+The tracked beat can drive the presets: a pulse on every beat is mixed into what presets see as
+`bass`/`bass_att` (or all bands), so they pump in time, also through breakdowns while the tracker
+coasts. Presets can also switch every 8/16/32/64 beats, optionally as a hard cut on the beat.
+
 ## Build
 
 Requires CMake 3.21+, a C++17 compiler and [vcpkg](https://vcpkg.io):

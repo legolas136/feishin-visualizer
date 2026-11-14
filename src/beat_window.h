@@ -23,6 +23,7 @@ public:
         float captureAgeMs = 0;  // age of the newest audio when analysed
         float frameMs = 0;       // render time per frame
         double lastBeatAgo = 1e9;  // seconds since the tracker's last beat
+        int beatsUntilSwitch = -1;  // beat-synced preset switching, -1 = not active
     };
 
     struct Actions {
@@ -45,7 +46,7 @@ public:
     Actions render(const BeatAnalysis& a, const BeatTracker& tracker, Config& cfg, const Status& status);
 
 private:
-    void drawTracker(const BeatTracker& t, TrackerSettings& s, const Status& status);
+    void drawTracker(const BeatTracker& t, Config& cfg, const Status& status);
 
     SDL_Window* window_ = nullptr;
     SDL_GLContext gl_ = nullptr;

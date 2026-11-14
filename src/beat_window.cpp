@@ -249,7 +249,7 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Beat tracker")) {
-        drawTracker(tracker, cfg.tracker, status);
+        drawTracker(tracker, cfg, status);
         ImGui::EndTabItem();
     }
     ImGui::EndTabBar();
@@ -260,7 +260,14 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
     ImGui::SameLine();
     if (ImGui::Button("Defaults (MilkDrop)")) {
         s = BeatSettings{};
-        cfg.tracker = TrackerSettings{};
+        const Config defaults;
+        cfg.tracker = defaults.tracker;
+        cfg.beatInjectMix = defaults.beatInjectMix;
+        cfg.beatInjectHeight = defaults.beatInjectHeight;
+        cfg.beatInjectDecay = defaults.beatInjectDecay;
+        cfg.beatInjectAllBands = defaults.beatInjectAllBands;
+        cfg.switchEveryBeats = defaults.switchEveryBeats;
+        cfg.switchOnBeatHardCut = defaults.switchOnBeatHardCut;
         cfg.reactionStrength = 1.0f;
     }
 
@@ -279,7 +286,8 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
     return actions;
 }
 
-void BeatWindow::drawTracker(const BeatTracker& t, TrackerSettings& s, const Status& status) {
+void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& status) {
+    TrackerSettings& s = cfg.tracker;
     const float fr = t.frameRate();
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
@@ -426,4 +434,33 @@ void BeatWindow::drawTracker(const BeatTracker& t, TrackerSettings& s, const Sta
     ImGui::SliderFloat("re-lock after (s)", &s.relockSeconds, 1.0f, 15.0f, "%.1f");
     ImGui::SetItemTooltip("A different tempo (new track, tempo change) must persist this long before re-locking.");
     ImGui::Checkbox("automatic preset switches wait for the next beat", &s.alignSwitches);
+
+    ImGui::SeparatorText("Use the beat in presets");
+    ImGui::BeginDisabled(!cfg.presetsUseAnalysis);
+    ImGui::SliderFloat("beat pulse mix", &cfg.beatInjectMix, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("Mixes a pulse on every tracked beat into what presets see as bass (and bass_att).\n"
+                          "0 = off, 1 = presets react only to the tracked beat. Keeps pumping through\n"
+                          "breakdowns and short silences while the tracker coasts.");
+    ImGui::SliderFloat("pulse height", &cfg.beatInjectHeight, 0.2f, 4.0f, "%.2f");
+    ImGui::SliderFloat("pulse decay (s)", &cfg.beatInjectDecay, 0.03f, 0.6f, "%.2f");
+    ImGui::Checkbox("pulse on bass, mid and treb (off: bass only)", &cfg.beatInjectAllBands);
+    ImGui::EndDisabled();
+    if (!cfg.presetsUseAnalysis) {
+        ImGui::TextDisabled("Needs \"presets react to this analysis\" (tab MilkDrop analysis).");
+    }
+    {
+        const int options[5] = {0, 8, 16, 32, 64};
+        const char* labels[5] = {"by time (MilkDrop)", "every 8 beats", "every 16 beats", "every 32 beats",
+                                 "every 64 beats"};
+        int current = 0;
+        for (int i = 0; i < 5; i++) {
+            if (cfg.switchEveryBeats == options[i]) current = i;
+        }
+        if (ImGui::Combo("preset switching", &current, labels, 5)) cfg.switchEveryBeats = options[current];
+        ImGui::SetItemTooltip("Beat-based switching needs a locked beat; while searching, the time setting applies.");
+    }
+    ImGui::BeginDisabled(cfg.switchEveryBeats == 0);
+    ImGui::Checkbox("switch as hard cut on the beat", &cfg.switchOnBeatHardCut);
+    ImGui::EndDisabled();
+    if (status.beatsUntilSwitch >= 0) ImGui::Text("Next preset in %d beats", status.beatsUntilSwitch);
 }

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -48,6 +49,8 @@ struct App {
     BeatTracker tracker;
     double lastBeatWall = -1e9;
     double switchDueSince = -1;  // automatic switch waiting for a beat
+    int beatsSincePreset = 0;
+    float injectMix = 0;  // beat pulse mix, faded in/out with the tracker lock
     BeatWindow beat;
     bool autoSwitch = false;  // next load is an automatic switch (uses blend_time_auto)
     PresetLibrary* library = nullptr;
@@ -132,6 +135,7 @@ void applyPreset(App& app, LoadedPreset preset, bool hardCut, bool pushHistory) 
     const BeatSettings& b = app.cfg.beat;
     projectm_set_soft_cut_duration(app.pm, app.autoSwitch ? b.blendTimeAuto : b.blendTimeUser);
     app.autoSwitch = false;
+    app.beatsSincePreset = 0;
     app.analysis.restartTimer(now(), b);
     projectm_load_preset_data(app.pm, preset.text.c_str(), !hardCut);
     app.current = std::move(preset);
@@ -610,22 +614,45 @@ int main(int argc, char* argv[]) {
         app.tracker.setSampleRate(audio.sampleRate());
         const int trackedBeats = app.tracker.process(samples.data(), frames, app.cfg.tracker);
         if (trackedBeats > 0) app.lastBeatWall = now();
+        app.beatsSincePreset += trackedBeats;
+        const bool beatLocked = app.tracker.state != TrackState::Searching;
         const bool hardCut = app.analysis.update(fps, now(), app.locked, app.cfg.beat);
         app.beat.record(app.analysis, hardCut);
         if (app.cfg.presetsUseAnalysis) {
             // Presets react to our analysis (patched projectM), scaled around 1.0
             const float k = app.cfg.reactionStrength;
+
+            // Tracked beat as a pulse, faded in over ~0.5 s once the tracker locks
+            const float target = beatLocked ? app.cfg.beatInjectMix : 0.0f;
+            app.injectMix += (target - app.injectMix) * std::min(1.0f, frameMs / 500.0f);
+            const float sinceBeat = static_cast<float>(now() - app.lastBeatWall);
+            const float decay = std::max(0.01f, app.cfg.beatInjectDecay);
+            const float pulse = 1.0f + app.cfg.beatInjectHeight * std::exp(-sinceBeat / decay);
+            const float pulseAtt = 1.0f + 0.6f * app.cfg.beatInjectHeight * std::exp(-sinceBeat / (4.0f * decay));
+
             float levels[6];
             for (int i = 0; i < 3; i++) {
-                levels[i] = std::max(0.0f, 1.0f + (app.analysis.immRel[i] - 1.0f) * k);
-                levels[3 + i] = std::max(0.0f, 1.0f + (app.analysis.avgRel[i] - 1.0f) * k);
+                float imm = app.analysis.immRel[i];
+                float att = app.analysis.avgRel[i];
+                if (i == 0 || app.cfg.beatInjectAllBands) {
+                    imm = (1.0f - app.injectMix) * imm + app.injectMix * pulse;
+                    att = (1.0f - app.injectMix) * att + app.injectMix * pulseAtt;
+                }
+                levels[i] = std::max(0.0f, 1.0f + (imm - 1.0f) * k);
+                levels[3 + i] = std::max(0.0f, 1.0f + (att - 1.0f) * k);
             }
             projectm_set_audio_levels_override(app.pm, levels);
         } else {
             projectm_set_audio_levels_override(app.pm, nullptr);
         }
+        const bool beatSwitching = app.cfg.switchEveryBeats > 0 && beatLocked;
         if (hardCut) {
             next(app, true);
+        } else if (beatSwitching) {
+            if (!app.locked && trackedBeats > 0 && app.beatsSincePreset >= app.cfg.switchEveryBeats) {
+                app.autoSwitch = true;
+                next(app, app.cfg.switchOnBeatHardCut);
+            }
         } else if (!app.locked && app.analysis.presetTimeUp(now())) {
             // Optionally wait for the next tracked beat (at most 2 s)
             if (app.switchDueSince < 0) app.switchDueSince = now();
@@ -654,7 +681,10 @@ int main(int argc, char* argv[]) {
         if (app.beat.isOpen()) {
             BeatWindow::Status st{app.current.name, app.locked, app.analysis.nextPresetTime() - now(),
                                   audio.deviceName(), audio.sampleRate(), audio.captureAgeMs(), frameMs,
-                                  now() - app.lastBeatWall};
+                                  now() - app.lastBeatWall,
+                                  (app.cfg.switchEveryBeats > 0 && app.tracker.state != TrackState::Searching)
+                                      ? std::max(0, app.cfg.switchEveryBeats - app.beatsSincePreset)
+                                      : -1};
             const auto act = app.beat.render(app.analysis, app.tracker, app.cfg, st);
             if (act.vsyncChanged) SDL_GL_SetSwapInterval(app.cfg.vsync ? 1 : 0);
             if (act.save) {
