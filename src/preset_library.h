@@ -36,6 +36,7 @@ private:
     std::filesystem::path dir_;
     std::filesystem::path ratingsFile_;
     std::vector<std::filesystem::path> pool_;
+    std::vector<double> weights_;  // rating per pool entry, cached for random picks
     std::map<std::string, int> ratings_;
     std::mt19937 rng_{std::random_device{}()};
 };

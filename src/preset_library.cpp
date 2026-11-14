@@ -21,23 +21,20 @@ void PresetLibrary::setDirectory(const fs::path& dir) {
         if (it->is_regular_file(ec) && it->path().extension() == ".milk") pool_.push_back(it->path());
     }
     std::sort(pool_.begin(), pool_.end());
+    weights_.resize(pool_.size());
+    for (size_t i = 0; i < pool_.size(); i++) weights_[i] = rating(pool_[i]);
 }
 
 std::optional<fs::path> PresetLibrary::pickRandom() {
     if (pool_.empty()) return std::nullopt;
 
     // MilkDrop: the rating is the weight; rating 0 = never picked, unless all are 0.
-    std::vector<double> weights;
-    weights.reserve(pool_.size());
     double total = 0;
-    for (const auto& p : pool_) {
-        weights.push_back(rating(p));
-        total += weights.back();
-    }
+    for (const double w : weights_) total += w;
     if (total <= 0) {
         return pool_[std::uniform_int_distribution<size_t>(0, pool_.size() - 1)(rng_)];
     }
-    std::discrete_distribution<size_t> dist(weights.begin(), weights.end());
+    std::discrete_distribution<size_t> dist(weights_.begin(), weights_.end());
     return pool_[dist(rng_)];
 }
 
@@ -58,9 +55,9 @@ std::optional<fs::path> PresetLibrary::pickNext(const fs::path& current) {
 }
 
 std::string PresetLibrary::key(const fs::path& file) const {
-    std::error_code ec;
-    const auto rel = fs::relative(file, root_, ec);
-    if (!ec && !rel.empty() && rel.native()[0] != '.') return rel.generic_u8string();
+    // Purely lexical (no filesystem access): this runs for every preset when switching.
+    const auto rel = file.lexically_relative(root_);
+    if (!rel.empty() && rel.native()[0] != '.') return rel.generic_u8string();
     return file.generic_u8string();
 }
 
@@ -71,6 +68,8 @@ int PresetLibrary::rating(const fs::path& file) const {
 
 void PresetLibrary::setRating(const fs::path& file, int rating) {
     ratings_[key(file)] = std::clamp(rating, 0, 5);
+    const auto it = std::lower_bound(pool_.begin(), pool_.end(), file);
+    if (it != pool_.end() && *it == file) weights_[it - pool_.begin()] = std::clamp(rating, 0, 5);
     saveRatings();
 }
 

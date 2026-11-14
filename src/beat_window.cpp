@@ -241,6 +241,12 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
                 cfg.audioDelayMs, ageAvgShown_ + status.frameMs * frames + cfg.audioDelayMs);
     ImGui::TextDisabled("Captured audio is what Windows sends to the device. Devices with their own lag\n"
                         "(wireless/Bluetooth, large interface buffers) play it later: raise the delay for them.");
+    ImGui::Text("Monitor: %.0f Hz   rendering at %.0f fps", status.refreshHz,
+                status.frameMs > 0 ? 1000.0f / status.frameMs : 0.0f);
+    if (!status.switchTiming.empty()) ImGui::Text("Last preset switch: %s", status.switchTiming.c_str());
+    ImGui::TextDisabled("If the monitor shows 60 Hz although it can do more: Windows display settings >\n"
+                        "Advanced display > refresh rate.");
+    ImGui::SliderInt("max fps (0 = monitor rate)", &cfg.maxFps, 0, 360);
     if (ImGui::Checkbox("VSync", &cfg.vsync)) actions.vsyncChanged = true;
     ImGui::SameLine();
     ImGui::Checkbox("low latency (no queued frames)", &cfg.lowLatency);

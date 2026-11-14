@@ -28,7 +28,7 @@ struct Config {
 
     int meshWidth = 48;
     int meshHeight = 36;
-    int fps = 60;
+    int maxFps = 0;  // 0 = follow the monitor refresh rate
     bool vsync = true;
     bool lowLatency = false;    // glFinish after each frame: no frames queued in the driver
     float audioDelayMs = 0.0f;  // delay audio into the analysis/visuals (for outputs with lag, e.g. wireless)

@@ -24,6 +24,8 @@ public:
         float frameMs = 0;       // render time per frame
         double lastBeatAgo = 1e9;  // seconds since the tracker's last beat
         int beatsUntilSwitch = -1;  // beat-synced preset switching, -1 = not active
+        float refreshHz = 60;
+        std::string switchTiming;   // timing of the last preset switch
     };
 
     struct Actions {

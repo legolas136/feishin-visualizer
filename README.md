@@ -46,7 +46,7 @@ Files next to the `.exe`: `config.ini` (settings), `ratings.ini` (preset ratings
 `config.ini` is created next to the `.exe` on first start. Preset timing, blend times and hard cuts use
 MilkDrop 2's settings and defaults (16 s + up to 10 s random, blend 2.7 s auto / 1.7 s manual, hard
 cuts off, loudness threshold 2.5, half-life 60 s) and can be changed live in the beat window (F12).
-Mesh size, FPS and window settings need a restart.
+Mesh size and window settings need a restart. `max_fps=0` follows the monitor refresh rate.
 
 ## Beat detection
 

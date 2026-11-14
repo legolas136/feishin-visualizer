@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 
@@ -70,7 +71,8 @@ void saveConfig(const std::filesystem::path& path, const Config& c) {
         << "\n# Warp mesh resolution (higher = smoother, slower). Restart after changes below.\n"
         << "mesh_width=" << c.meshWidth << "\n"
         << "mesh_height=" << c.meshHeight << "\n"
-        << "fps=" << c.fps << "\n"
+        << "# Frame rate limit, 0 = monitor refresh rate (with VSync)\n"
+        << "max_fps=" << c.maxFps << "\n"
         << "aspect_correction=" << c.aspectCorrection << "\n"
         << "\nfullscreen=" << c.fullscreen << "\n"
         << "window_width=" << c.windowWidth << "\n"
@@ -125,7 +127,8 @@ Config loadConfig(const std::filesystem::path& path) {
             else if (key == "reaction_strength") c.reactionStrength = std::stof(value);
             else if (key == "mesh_width") c.meshWidth = std::stoi(value);
             else if (key == "mesh_height") c.meshHeight = std::stoi(value);
-            else if (key == "fps") c.fps = std::stoi(value);
+            else if (key == "max_fps") c.maxFps = std::max(0, std::stoi(value));
+            else if (key == "fps") {}  // replaced by max_fps (old default 60 capped high-refresh monitors)
             else if (key == "vsync") c.vsync = toBool(value);
             else if (key == "low_latency") c.lowLatency = toBool(value);
             else if (key == "audio_delay_ms") c.audioDelayMs = std::stof(value);

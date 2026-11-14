@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
 #include <cmath>
 #include <deque>
 #include <filesystem>
@@ -51,6 +52,12 @@ struct App {
     double switchDueSince = -1;  // automatic switch waiting for a beat
     int beatsSincePreset = 0;
     float injectMix = 0;  // beat pulse mix, faded in/out with the tracker lock
+    float refreshHz = 60;  // monitor refresh rate of the window's display
+    int projectmFps = 0;   // value last passed to projectm_set_fps
+    // Preset switch timing (ms): pick, file read, projectM load, first frame after the load
+    double pickMs = 0, readMs = 0, loadMs = 0, firstFrameMs = 0;
+    int framesSinceLoad = 1000;
+    std::string switchTiming;
     BeatWindow beat;
     bool autoSwitch = false;  // next load is an automatic switch (uses blend_time_auto)
     PresetLibrary* library = nullptr;
@@ -137,7 +144,10 @@ void applyPreset(App& app, LoadedPreset preset, bool hardCut, bool pushHistory) 
     app.autoSwitch = false;
     app.beatsSincePreset = 0;
     app.analysis.restartTimer(now(), b);
+    const Uint64 t0 = SDL_GetTicksNS();
     projectm_load_preset_data(app.pm, preset.text.c_str(), !hardCut);
+    app.loadMs = (SDL_GetTicksNS() - t0) / 1e6;
+    app.framesSinceLoad = 0;
     app.current = std::move(preset);
     if (pushHistory) {
         app.history.push_back(app.current);
@@ -149,7 +159,9 @@ void applyPreset(App& app, LoadedPreset preset, bool hardCut, bool pushHistory) 
 
 // Loads a preset file, keeping locked shaders (D) from the current preset.
 void loadPresetFile(App& app, const fs::path& file, bool hardCut) {
+    const Uint64 t0 = SDL_GetTicksNS();
     LoadedPreset p{file, file.stem().u8string(), readTextFile(file)};
+    app.readMs = (SDL_GetTicksNS() - t0) / 1e6;
     if (p.text.empty()) {
         notify(app, "Cannot read " + file.u8string());
         return;
@@ -166,7 +178,16 @@ void loadPresetFile(App& app, const fs::path& file, bool hardCut) {
 }
 
 void next(App& app, bool hardCut) {
-    if (const auto file = app.library->pickNext(app.current.file)) loadPresetFile(app, *file, hardCut);
+    const Uint64 t0 = SDL_GetTicksNS();
+    const auto file = app.library->pickNext(app.current.file);
+    app.pickMs = (SDL_GetTicksNS() - t0) / 1e6;
+    if (file) loadPresetFile(app, *file, hardCut);
+}
+
+void updateRefreshRate(App& app) {
+    const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(app.window));
+    app.refreshHz = (mode && mode->refresh_rate > 0) ? mode->refresh_rate : 60.0f;
+    std::cout << "Display: " << app.refreshHz << " Hz\n";
 }
 
 void back(App& app) {
@@ -476,6 +497,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     SDL_GL_SetSwapInterval(cfg.vsync ? 1 : 0);
+    updateRefreshRate(app);
 
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) {
@@ -516,7 +538,6 @@ int main(int argc, char* argv[]) {
     SDL_GetWindowSizeInPixels(app.window, &width, &height);
     projectm_set_window_size(app.pm, width, height);
     projectm_set_mesh_size(app.pm, cfg.meshWidth, cfg.meshHeight);
-    projectm_set_fps(app.pm, cfg.fps);
     projectm_set_aspect_correction(app.pm, cfg.aspectCorrection);
     // Switching and hard cuts are driven by our MilkDrop-style analysis, not by projectM.
     projectm_set_preset_duration(app.pm, 1e7);
@@ -552,7 +573,7 @@ int main(int argc, char* argv[]) {
     Uint64 lastFrame = SDL_GetPerformanceCounter();
 
     while (running) {
-        const Uint64 frameStart = SDL_GetTicks();
+        const Uint64 frameStart = SDL_GetTicksNS();
 
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -560,6 +581,8 @@ int main(int argc, char* argv[]) {
             ImGui_ImplSDL3_ProcessEvent(&e);
             if (e.type == SDL_EVENT_QUIT || e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = false;
+            } else if (e.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED) {
+                updateRefreshRate(app);
             } else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
                 SDL_GetWindowSizeInPixels(app.window, &width, &height);
                 projectm_set_window_size(app.pm, width, height);
@@ -665,7 +688,24 @@ int main(int argc, char* argv[]) {
         }
 
         glViewport(0, 0, width, height);
+        // projectM's frame rate (used for time-based preset effects) follows the real target
+        const int targetFps = app.cfg.maxFps > 0 ? app.cfg.maxFps : static_cast<int>(app.refreshHz + 0.5f);
+        if (targetFps != app.projectmFps) {
+            app.projectmFps = targetFps;
+            projectm_set_fps(app.pm, targetFps);
+        }
+        const Uint64 renderStart = SDL_GetTicksNS();
         projectm_opengl_render_frame(app.pm);
+        if (app.framesSinceLoad == 0) {
+            // Shader compilation of a new preset often happens in its first frame
+            app.firstFrameMs = (SDL_GetTicksNS() - renderStart) / 1e6;
+            char buf[160];
+            std::snprintf(buf, sizeof(buf), "pick %.1f ms, read %.1f ms, projectM load %.1f ms, first frame %.1f ms",
+                          app.pickMs, app.readMs, app.loadMs, app.firstFrameMs);
+            app.switchTiming = buf;
+            std::cout << "  switch: " << buf << "\n";
+        }
+        app.framesSinceLoad++;
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
@@ -684,7 +724,8 @@ int main(int argc, char* argv[]) {
                                   now() - app.lastBeatWall,
                                   (app.cfg.switchEveryBeats > 0 && app.tracker.state != TrackState::Searching)
                                       ? std::max(0, app.cfg.switchEveryBeats - app.beatsSincePreset)
-                                      : -1};
+                                      : -1,
+                                  app.refreshHz, app.switchTiming};
             const auto act = app.beat.render(app.analysis, app.tracker, app.cfg, st);
             if (act.vsyncChanged) SDL_GL_SetSwapInterval(app.cfg.vsync ? 1 : 0);
             if (act.save) {
@@ -703,10 +744,11 @@ int main(int argc, char* argv[]) {
             frameMs = frameMs * 0.95f + dt * 1000.0f * 0.05f;
         }
 
-        const Uint64 frameLimitMs = (!app.cfg.vsync && app.cfg.fps > 0) ? 1000 / app.cfg.fps : 0;
-        if (frameLimitMs > 0) {
-            const Uint64 elapsed = SDL_GetTicks() - frameStart;
-            if (elapsed < frameLimitMs) SDL_Delay(static_cast<Uint32>(frameLimitMs - elapsed));
+        // Frame limit (only needed without VSync or below the monitor rate)
+        if (app.cfg.maxFps > 0 && (!app.cfg.vsync || app.cfg.maxFps < app.refreshHz - 1.0f)) {
+            const Uint64 frameNs = 1000000000ull / static_cast<Uint64>(app.cfg.maxFps);
+            const Uint64 elapsed = SDL_GetTicksNS() - frameStart;
+            if (elapsed < frameNs) SDL_DelayPrecise(frameNs - elapsed);
         }
     }
 
