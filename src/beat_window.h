@@ -26,6 +26,7 @@ public:
         int beatsUntilSwitch = -1;  // beat-synced preset switching, -1 = not active
         float refreshHz = 60;
         std::string switchTiming;   // timing of the last preset switch
+        float pulseMix = 0;         // beat pulse mix currently applied
     };
 
     struct Actions {

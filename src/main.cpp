@@ -350,6 +350,14 @@ void handleKey(App& app, const SDL_KeyboardEvent& key, bool& running) {
             break;
 
         // Overlays
+        case SDLK_1:
+            if (app.tracker.state == TrackState::Searching) {
+                notify(app, "no beat locked yet");
+            } else {
+                app.tracker.markDownbeat();
+                notify(app, "bar start set: this is the 1");
+            }
+            break;
         case SDLK_F1: app.showHelp = !app.showHelp; break;
         case SDLK_F2:
         case SDLK_F3:
@@ -393,6 +401,7 @@ const char* kHelp[] = {
     "+ / -     rate current preset (0 = never random)",
     "A         mash-up: preset + warp + comp of others",
     "D         cycle warp/composite shader lock",
+    "1         this beat is the 1 (bar start for the beat tracker)",
     "F4        preset name    F5 fps    F6 rating",
     "F8        type a preset directory (Ctrl+V pastes)",
     "F12       beat detection window (graphs + settings)",
@@ -645,9 +654,15 @@ int main(int argc, char* argv[]) {
             // Presets react to our analysis (patched projectM), scaled around 1.0
             const float k = app.cfg.reactionStrength;
 
-            // Tracked beat as a pulse, faded in over ~0.5 s once the tracker locks
-            const float target = beatLocked ? app.cfg.beatInjectMix : 0.0f;
-            app.injectMix += (target - app.injectMix) * std::min(1.0f, frameMs / 500.0f);
+            // Tracked beat as a pulse. Scaled by how sure the lock is (0 below 0.4 confidence, full
+            // from 0.8) and how present the kick is (0 at once on silence or when it stops, follows
+            // a fade-out). Never while coasting. Drops immediately, comes back over ~0.5 s.
+            const float sure = app.tracker.state == TrackState::Locked
+                                   ? std::clamp((app.tracker.confidence - 0.4f) / 0.4f, 0.0f, 1.0f)
+                                   : 0.0f;
+            const float target = app.cfg.beatInjectMix * sure * app.tracker.beatPresence;
+            if (target < app.injectMix) app.injectMix = target;
+            else app.injectMix += (target - app.injectMix) * std::min(1.0f, frameMs / 500.0f);
             const float sinceBeat = static_cast<float>(now() - app.lastBeatWall);
             const float decay = std::max(0.01f, app.cfg.beatInjectDecay);
             const float pulse = 1.0f + app.cfg.beatInjectHeight * std::exp(-sinceBeat / decay);
@@ -672,7 +687,9 @@ int main(int argc, char* argv[]) {
         if (hardCut) {
             next(app, true);
         } else if (beatSwitching) {
-            if (!app.locked && trackedBeats > 0 && app.beatsSincePreset >= app.cfg.switchEveryBeats) {
+            const int bar = app.tracker.barPosition();
+            const bool onTheOne = !app.cfg.switchOnDownbeat || bar < 0 || bar == 0;
+            if (!app.locked && trackedBeats > 0 && app.beatsSincePreset >= app.cfg.switchEveryBeats && onTheOne) {
                 app.autoSwitch = true;
                 next(app, app.cfg.switchOnBeatHardCut);
             }
@@ -725,7 +742,7 @@ int main(int argc, char* argv[]) {
                                   (app.cfg.switchEveryBeats > 0 && app.tracker.state != TrackState::Searching)
                                       ? std::max(0, app.cfg.switchEveryBeats - app.beatsSincePreset)
                                       : -1,
-                                  app.refreshHz, app.switchTiming};
+                                  app.refreshHz, app.switchTiming, app.injectMix};
             const auto act = app.beat.render(app.analysis, app.tracker, app.cfg, st);
             if (act.vsyncChanged) SDL_GL_SetSwapInterval(app.cfg.vsync ? 1 : 0);
             if (act.save) {

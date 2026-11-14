@@ -176,6 +176,7 @@ void BeatTracker::hop(const TrackerSettings& s) {
     // sub, so both stop pulling the beat onto the off-beats. Needs D frames of look-ahead, so the
     // value is written D frames back into the history.
     const int D = std::max(2, static_cast<int>(0.08f * fr));
+    kickDelay_ = D;
     odfPhase[i] = 0;
     if (n_ >= D) {
         const long j = (n_ - D) % kHistory;
@@ -186,6 +187,21 @@ void BeatTracker::hop(const TrackerSettings& s) {
 
     odf[i] = value;
     flags[i] = silent ? FlagSilent : 0;
+
+    // Spectrum summary per beat (12 log-spaced bands, 60 Hz - 8 kHz) for the downbeat estimate
+    if (silent) {
+        beatPresence = 0;  // no twitching in silence
+    } else {
+        for (int b = 0; b < kBands; b++) {
+            const float lo = 60.0f * std::pow(2.0f, b * 7.0f / kBands);
+            const float hi = 60.0f * std::pow(2.0f, (b + 1) * 7.0f / kBands);
+            const int k0 = std::max(1, static_cast<int>(lo / binHz));
+            const int k1 = std::max(k0 + 1, static_cast<int>(hi / binHz));
+            float e = 0;
+            for (int k = k0; k < k1 && k < kFft / 2; k++) e += std::norm(buf_[k]);
+            bandAcc_[b] += e;
+        }
+    }
 
     // --- Adaptive threshold: mean of the last ~0.4 s, scaled by sensitivity
     const int h = std::max(4, static_cast<int>(0.4f * fr));
@@ -350,6 +366,100 @@ void BeatTracker::acquire(const TrackerSettings& s, float period) {
     confidence = 0.5f;
     mismatchSeconds = 0;
     state = TrackState::Locked;
+    // New lock (new track / tempo): bar position and kick level start over
+    beatIndex_ = 0;
+    downbeatOffset_ = -1;
+    downbeatManual = false;
+    downbeatConfidence = 0;
+    downbeatVotes.fill(0);
+    votedBeats_ = 0;
+    havePrevBands_ = false;
+    bandAcc_.fill(0);
+    kickAvg_ = 0;
+    beatPresence = 0;
+}
+
+int BeatTracker::barPosition() const {
+    if (downbeatOffset_ < 0 || beatIndex_ == 0 || state == TrackState::Searching) return -1;
+    return static_cast<int>(((beatIndex_ - 1 - downbeatOffset_) % 4 + 4) % 4);
+}
+
+int BeatTracker::suggestedDownbeat() const {
+    if (votedBeats_ < 16 || beatIndex_ == 0) return -1;
+    int best = 0;
+    for (int p = 1; p < 4; p++) {
+        if (downbeatVotes[p] > downbeatVotes[best]) best = p;
+    }
+    // as a bar position of the last beat, like barPosition()
+    return static_cast<int>(((beatIndex_ - 1 - best) % 4 + 4) % 4);
+}
+
+void BeatTracker::markDownbeat() {
+    if (state == TrackState::Searching || period_ <= 0) return;
+    // Pressed shortly after a beat (reaction time) -> that beat, otherwise the upcoming one
+    const bool lastOne = lastBeatFrame_ >= 0 && (n_ - 1 - lastBeatFrame_) < 0.5f * period_;
+    const long b = lastOne ? beatIndex_ - 1 : beatIndex_;
+    downbeatOffset_ = static_cast<int>(((b % 4) + 4) % 4);
+    downbeatManual = true;
+}
+
+void BeatTracker::beatEmitted() {
+    beatIndex_++;
+
+    // The spectrum of the beat interval that just ended vs the one before: a big change means
+    // something new started at that interval's beat. New parts mostly start on the "1".
+    std::array<float, kBands> v{};
+    for (int b = 0; b < kBands; b++) v[b] = std::log1p(bandAcc_[b] * 1e-3f);
+    bandAcc_.fill(0);
+    if (havePrevBands_ && beatIndex_ >= 3) {
+        float dot = 0, na = 0, nb = 0;
+        for (int b = 0; b < kBands; b++) {
+            dot += v[b] * prevBands_[b];
+            na += v[b] * v[b];
+            nb += prevBands_[b] * prevBands_[b];
+        }
+        const float change = (na > 0 && nb > 0) ? 1.0f - dot / std::sqrt(na * nb) : 0.0f;
+        const int pos = static_cast<int>((beatIndex_ - 2) % 4);  // the beat that started the interval
+        for (auto& vote : downbeatVotes) vote *= 0.995f;
+        downbeatVotes[pos] += change * change * 1000.0f;
+        votedBeats_++;
+
+        int best = 0;
+        for (int p = 1; p < 4; p++) {
+            if (downbeatVotes[p] > downbeatVotes[best]) best = p;
+        }
+        float second = 0;
+        for (int p = 0; p < 4; p++) {
+            if (p != best) second = std::max(second, downbeatVotes[p]);
+        }
+        downbeatConfidence = downbeatVotes[best] > 0 ? 1.0f - second / downbeatVotes[best] : 0.0f;
+        // Only with enough evidence, and only move an existing "1" if the new one is clearly better
+        if (!downbeatManual && votedBeats_ >= 64 && downbeatConfidence > 0.5f) {
+            if (downbeatOffset_ < 0 || downbeatVotes[best] > 1.5f * downbeatVotes[downbeatOffset_]) downbeatOffset_ = best;
+        }
+    }
+    prevBands_ = v;
+    havePrevBands_ = true;
+}
+
+void BeatTracker::updatePresence(float kick, bool quiet) {
+    if (quiet) {
+        beatPresence = 0;
+        return;
+    }
+    if (kickAvg_ <= 1e-6f) kickAvg_ = kick;
+    // 1.25: a normal kick (with some jitter around the average) counts as fully present
+    const float raw = kickAvg_ > 1e-6f ? std::min(1.0f, 1.25f * kick / kickAvg_) : 0.0f;
+    if (raw < 0.35f) {
+        beatPresence = 0;  // the kick stopped: no pulse at once
+    } else if (raw < beatPresence) {
+        beatPresence = raw;  // fading out: follow down directly
+    } else {
+        beatPresence += (raw - beatPresence) * 0.35f;  // coming back: over a few beats
+    }
+    // Learn the usual kick level from clear beats; adapt slowly to a weaker (but present) kick
+    if (raw > 0.6f) kickAvg_ += (kick - kickAvg_) * 0.06f;
+    else if (raw >= 0.3f) kickAvg_ += (kick - kickAvg_) * 0.02f;
 }
 
 void BeatTracker::track(const TrackerSettings& s) {
@@ -366,6 +476,7 @@ void BeatTracker::track(const TrackerSettings& s) {
         beatsInHop_++;
         lastBeatFrame_ = cur;
         flags[cur % kHistory] |= FlagBeat;
+        beatEmitted();
     }
 
     // Once the window around the prediction is complete, correct phase and tempo
@@ -386,6 +497,15 @@ void BeatTracker::track(const TrackerSettings& s) {
     }
 
     bool quiet = silent;
+
+    // Kick strength at this beat (the kick detector lags kickDelay_ frames)
+    float kick = 0;
+    for (long f = static_cast<long>(std::ceil(nextBeat_ - win)); f <= static_cast<long>(nextBeat_) + 2; f++) {
+        if (f < 0 || f > n_ - 1 - kickDelay_ || f < n_ - kHistory) continue;
+        kick = std::max(kick, odfPhase[f % kHistory]);
+    }
+    updatePresence(kick, quiet);
+
     double beatPos = nextBeat_;
     if (bestFrame >= 0) {
         const float e = static_cast<float>(bestFrame - nextBeat_);

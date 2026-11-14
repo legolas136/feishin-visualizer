@@ -31,6 +31,7 @@ Modelled on MilkDrop 2 (see the official MilkDrop 2 documentation by Ryan Geiss)
 | + / - | rate current preset 0-5 (rating = weight for random picks, 0 = never) |
 | A | mash-up: random preset + warp shader of a second + composite shader of a third |
 | D | cycle shader lock: warp, composite, both, none (kept when presets change) |
+| 1 | beat tracker: this beat is the "1" (bar start), kept until the next lock |
 | F4 / F5 / F6 | preset name / fps / rating |
 | F8 | type or paste (Ctrl+V) a preset directory |
 | F12 | beat detection window: live bass/mid/treb, hard-cut threshold, spectrum, switching settings, latency and sync |
@@ -69,7 +70,11 @@ the next beat.
 
 The tracked beat can drive the presets: a pulse on every beat is mixed into what presets see as
 `bass`/`bass_att` (or all bands), so they pump in time, also through breakdowns while the tracker
-coasts. Presets can also switch every 8/16/32/64 beats, optionally as a hard cut on the beat.
+coasts. The pulse is scaled by the lock confidence and by how present the kick is: off in silence,
+off at once when the kick stops, fading out with a fading kick. Presets can also switch every
+8/16/32/64 beats, optionally as a hard cut and on the "1". The bar start comes from key `1`; an
+automatic estimate (where the sound changes) is applied only when it is clearly sure, because in
+electronic music the kick is identical on every beat.
 
 ## Build
 

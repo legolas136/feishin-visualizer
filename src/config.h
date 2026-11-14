@@ -25,6 +25,7 @@ struct Config {
     // Switch presets every N tracked beats instead of by time (0 = off)
     int switchEveryBeats = 0;
     bool switchOnBeatHardCut = false;
+    bool switchOnDownbeat = true;  // beat-synced switches wait for the "1" when it is known
 
     int meshWidth = 48;
     int meshHeight = 36;

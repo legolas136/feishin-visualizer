@@ -64,6 +64,7 @@ void saveConfig(const std::filesystem::path& path, const Config& c) {
         << "# Switch presets every N tracked beats (0 = by time), 1 = as hard cut on the beat\n"
         << "switch_every_beats=" << c.switchEveryBeats << "\n"
         << "switch_on_beat_hard_cut=" << c.switchOnBeatHardCut << "\n"
+        << "switch_on_downbeat=" << c.switchOnDownbeat << "\n"
         << "\n# Sync: low_latency = render without queued frames, audio_delay_ms = delay visuals\n"
         << "vsync=" << c.vsync << "\n"
         << "low_latency=" << c.lowLatency << "\n"
@@ -123,6 +124,7 @@ Config loadConfig(const std::filesystem::path& path) {
             else if (key == "beat_inject_all_bands") c.beatInjectAllBands = toBool(value);
             else if (key == "switch_every_beats") c.switchEveryBeats = std::stoi(value);
             else if (key == "switch_on_beat_hard_cut") c.switchOnBeatHardCut = toBool(value);
+            else if (key == "switch_on_downbeat") c.switchOnDownbeat = toBool(value);
             else if (key == "presets_use_analysis") c.presetsUseAnalysis = toBool(value);
             else if (key == "reaction_strength") c.reactionStrength = std::stof(value);
             else if (key == "mesh_width") c.meshWidth = std::stoi(value);

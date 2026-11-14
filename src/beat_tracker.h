@@ -6,6 +6,7 @@
 // 3. phase-locked loop: predicts beats, corrects phase/tempo on matching onsets,
 //    keeps ticking through silence ("coasting") and re-locks on tempo changes / new tracks.
 
+#include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -55,6 +56,18 @@ public:
     float mismatchSeconds = 0;           // how long the estimate has disagreed with the lock
     float phaseMismatchSeconds = 0;      // how long another beat phase has fitted clearly better
 
+    // How present the beat is right now (0..1): kick strength at the latest beats relative to the
+    // usual kick of this track. 0 at once on silence or when the kick suddenly stops, follows a fade.
+    float beatPresence = 0;
+
+    // Bar position ("the 1"): manual (markDownbeat) or estimated from where the sound changes
+    int barPosition() const;             // 0 = last beat was the "1", 1..3, -1 = unknown
+    void markDownbeat();                 // the nearest beat is the "1"
+    bool downbeatManual = false;
+    float downbeatConfidence = 0;        // automatic estimate, 0..1 (applied from 0.5)
+    int suggestedDownbeat() const;       // bar position the automatic estimate prefers, -1 = none
+    std::array<float, 4> downbeatVotes{};  // sound changes per bar position (relative to lock)
+
     // History for display, indexed by frame % kHistory; frame() is the newest frame + 1
     long frame() const { return n_; }
     std::vector<float> odf, threshold;
@@ -86,6 +99,18 @@ private:
     long n_ = 0;  // number of onset frames processed
     float emaFull_ = 0, emaLow_ = 0, longRms_ = 0, emaClick_ = 0, emaSubE_ = 0;
     std::vector<float> clickHist_, subHist_;  // normalised click onsets / sub-bass energy per frame
+    int kickDelay_ = 2;                       // frames the kick detector lags behind
+
+    // Beat presence / downbeat
+    void beatEmitted();
+    void updatePresence(float kick, bool quiet);
+    long beatIndex_ = 0;        // beats emitted since the lock
+    int downbeatOffset_ = -1;   // beatIndex_ % 4 of the "1"
+    float kickAvg_ = 0;         // usual kick strength of this track
+    static constexpr int kBands = 12;
+    std::array<float, kBands> bandAcc_{}, prevBands_{};
+    bool havePrevBands_ = false;
+    long votedBeats_ = 0;
     long lastOnset_ = -1000;
     long coastSince_ = -1;  // frame when coasting started
     int beatsInHop_ = 0;

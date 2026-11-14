@@ -277,6 +277,7 @@ BeatWindow::Actions BeatWindow::render(const BeatAnalysis& a, const BeatTracker&
         cfg.beatInjectAllBands = defaults.beatInjectAllBands;
         cfg.switchEveryBeats = defaults.switchEveryBeats;
         cfg.switchOnBeatHardCut = defaults.switchOnBeatHardCut;
+        cfg.switchOnDownbeat = defaults.switchOnDownbeat;
         cfg.reactionStrength = 1.0f;
     }
 
@@ -331,10 +332,13 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     const ImVec2 oc(c.x + radius + 30, c.y + radius - 12);
     dl->AddCircleFilled(oc, 12, IM_COL32(60, 220, 255, static_cast<int>(40 + 215 * std::exp(-onsetAgo / 0.1f))), 24);
 
-    // beat counter (1-4, no downbeat detection)
+    // bar position 1-4 (the "1" drawn bigger); without a known "1" the dots just count
+    const int bar = t.barPosition();
     for (int k = 0; k < 4; k++) {
-        const bool on = t.state != TrackState::Searching && (t.beatCount - 1) % 4 == k;
-        dl->AddCircleFilled(ImVec2(c.x - radius + 6 + k * 26.0f, c.y + radius + 20), 8,
+        const bool on = t.state != TrackState::Searching &&
+                        (bar >= 0 ? bar == k : (t.beatCount - 1) % 4 == k);
+        const float r = (bar >= 0 && k == 0) ? 11.0f : 8.0f;
+        dl->AddCircleFilled(ImVec2(c.x - radius + 6 + k * 26.0f, c.y + radius + 20), r,
                             on ? lampColor : IM_COL32(60, 60, 70, 255), 16);
     }
 
@@ -350,7 +354,19 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     ImGui::ProgressBar(t.beatPhase(), ImVec2(160, 0), "phase");
     ImGui::Text("Signal: %s   tempo differs for %.1f s   phase differs for %.1f s", t.silent ? "silent" : "audio",
                 t.mismatchSeconds, t.phaseMismatchSeconds);
-    ImGui::TextDisabled("Big lamp = tracked beat, small cyan lamp = raw onset, dots = beat 1-4 (not bar-aligned)");
+    ImGui::ProgressBar(t.beatPresence, ImVec2(260, 0), "kick presence");
+    ImGui::SameLine();
+    char pm[48];
+    std::snprintf(pm, sizeof(pm), "pulse mix applied %.2f", status.pulseMix);
+    ImGui::ProgressBar(cfg.beatInjectMix > 0 ? status.pulseMix / cfg.beatInjectMix : 0.0f, ImVec2(260, 0), pm);
+    if (bar >= 0) {
+        ImGui::Text("Bar: beat %d of 4 (%s)", bar + 1, t.downbeatManual ? "set with key 1" : "automatic");
+    } else {
+        const int sug = t.suggestedDownbeat();
+        if (sug >= 0) ImGui::Text("Bar: unknown - press 1 on the 1 (automatic guess: this beat = %d, %.0f%% sure)", sug + 1, 100 * t.downbeatConfidence);
+        else ImGui::Text("Bar: unknown - press 1 on the 1");
+    }
+    ImGui::TextDisabled("Big lamp = tracked beat, small cyan lamp = raw onset, dots = bar position (big = the 1)");
     ImGui::EndGroup();
     ImGui::SetCursorScreenPos(ImVec2(p0.x, p0.y + 2 * radius + 40));
 
@@ -448,8 +464,9 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     ImGui::BeginDisabled(!cfg.presetsUseAnalysis);
     ImGui::SliderFloat("beat pulse mix", &cfg.beatInjectMix, 0.0f, 1.0f, "%.2f");
     ImGui::SetItemTooltip("Mixes a pulse on every tracked beat into what presets see as bass (and bass_att).\n"
-                          "0 = off, 1 = presets react only to the tracked beat. Keeps pumping through\n"
-                          "breakdowns and short silences while the tracker coasts.");
+                          "0 = off, 1 = presets react only to the tracked beat. Applied only as far as the\n"
+                          "lock is sure and the kick is present: off in silence, off at once when the kick\n"
+                          "stops, fading with a fading kick.");
     ImGui::SliderFloat("pulse height", &cfg.beatInjectHeight, 0.2f, 4.0f, "%.2f");
     ImGui::SliderFloat("pulse decay (s)", &cfg.beatInjectDecay, 0.03f, 0.6f, "%.2f");
     ImGui::Checkbox("pulse on bass, mid and treb (off: bass only)", &cfg.beatInjectAllBands);
@@ -470,6 +487,7 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     }
     ImGui::BeginDisabled(cfg.switchEveryBeats == 0);
     ImGui::Checkbox("switch as hard cut on the beat", &cfg.switchOnBeatHardCut);
+    ImGui::Checkbox("switch on the 1 (when the bar start is known)", &cfg.switchOnDownbeat);
     ImGui::EndDisabled();
     if (status.beatsUntilSwitch >= 0) ImGui::Text("Next preset in %d beats", status.beatsUntilSwitch);
 }
