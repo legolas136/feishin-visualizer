@@ -382,6 +382,10 @@ void BeatTracker::acquire(const TrackerSettings& s, float period) {
     bandAcc_.fill(0);
     kickAvg_ = 0;
     beatPresence = 0;
+    presenceSlow = 0;
+    beatActive = false;
+    missedBeats_ = 0;
+    goodBeats_ = 0;
 }
 
 int BeatTracker::barPosition() const {
@@ -504,6 +508,7 @@ void BeatTracker::track(const TrackerSettings& s) {
         kick = std::max(kick, odfPhase[f % kHistory]);
     }
     updatePresence(kick, quiet);
+    const float kickRaw = kickAvg_ > 1e-6f ? std::min(1.0f, 1.25f * kick / kickAvg_) : 0.0f;
 
     double beatPos = nextBeat_;
     if (bestFrame >= 0) {
@@ -522,6 +527,22 @@ void BeatTracker::track(const TrackerSettings& s) {
     nextBeat_ = beatPos + period_;
     emitted_ = false;
 
+    // Held beat state for the pulse
+    if (!quiet) {
+        const bool evidence = bestFrame >= 0 || kickRaw >= 0.35f;
+        if (evidence) {
+            missedBeats_ = 0;
+            goodBeats_++;
+        } else {
+            missedBeats_++;
+            goodBeats_ = 0;
+        }
+        presenceSlow = goodBeats_ == 1 && presenceSlow == 0 ? beatPresence
+                                                            : presenceSlow + (beatPresence - presenceSlow) * (1.0f / 16.0f);
+        if (!beatActive && confidence >= 0.5f && goodBeats_ >= 2) beatActive = true;
+        if (beatActive && missedBeats_ >= 2) beatActive = false;  // the beat suddenly stopped
+    }
+
     // State changes (soft lock): silence or weak matches only make us coast on the last tempo.
     // A new tempo takes over via the re-lock check in estimateTempo(); coasting too long gives up.
     if (state == TrackState::Locked && (quiet || confidence < 0.3f)) {
@@ -531,5 +552,6 @@ void BeatTracker::track(const TrackerSettings& s) {
     if (state == TrackState::Coasting && (n_ - coastSince_) / fr > s.coastSeconds) {
         state = TrackState::Searching;
         agreeingEstimates_ = 0;
+        beatActive = false;
     }
 }

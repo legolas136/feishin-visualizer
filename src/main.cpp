@@ -654,13 +654,11 @@ int main(int argc, char* argv[]) {
             // Presets react to our analysis (patched projectM), scaled around 1.0
             const float k = app.cfg.reactionStrength;
 
-            // Tracked beat as a pulse. Scaled by how sure the lock is (0 below 0.25 confidence, full
-            // from 0.6) and how present the kick is (fades with a weak or missing kick). Never while
-            // coasting. Real silence mutes it at once; when sound returns it is back within ~150 ms.
-            const float sure = app.tracker.state == TrackState::Locked
-                                   ? std::clamp((app.tracker.confidence - 0.25f) / 0.35f, 0.0f, 1.0f)
-                                   : 0.0f;
-            float target = app.tracker.silent ? 0.0f : app.cfg.beatInjectMix * sure * app.tracker.beatPresence;
+            // Tracked beat as a pulse, held at the full mix while the beat is on. Off at once on real
+            // silence (back within ~150 ms) or when the beat suddenly stops; fades only when the kick
+            // gets quieter over many beats.
+            const float fade = std::clamp((app.tracker.presenceSlow - 0.1f) / 0.3f, 0.0f, 1.0f);
+            float target = (app.tracker.silent || !app.tracker.beatActive) ? 0.0f : app.cfg.beatInjectMix * fade;
             if (app.cfg.pulseOverride) target = app.cfg.beatInjectMix;  // test switch
             if (target < app.injectMix) app.injectMix = target;
             else app.injectMix += (target - app.injectMix) * std::min(1.0f, frameMs / 150.0f);

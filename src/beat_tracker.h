@@ -61,6 +61,12 @@ public:
     float beatPresence = 0;
     float silentSeconds = 0;  // how long the current silence lasts (0 while there is sound)
 
+    // Held "beat is on" state for the beat pulse: on once the lock is sure, off only when the
+    // beat suddenly stops (2 beats without onset and kick) or the tempo is lost. Silence is
+    // handled by the caller (instant mute, instant return).
+    bool beatActive = false;
+    float presenceSlow = 0;   // kick presence averaged over ~16 beats (for real fade-outs)
+
     // Bar position ("the 1"): manual (markDownbeat) or estimated from where the sound changes
     int barPosition() const;             // 0 = last beat was the "1", 1..3, -1 = unknown
     void markDownbeat();                 // the nearest beat is the "1"
@@ -112,6 +118,8 @@ private:
     std::array<float, kBands> bandAcc_{}, prevBands_{};
     bool havePrevBands_ = false;
     long votedBeats_ = 0;
+    int missedBeats_ = 0;   // consecutive beats without onset and kick
+    int goodBeats_ = 0;     // consecutive beats with evidence
     long lastOnset_ = -1000;
     long coastSince_ = -1;  // frame when coasting started
     int beatsInHop_ = 0;
