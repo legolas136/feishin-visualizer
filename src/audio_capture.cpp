@@ -46,10 +46,13 @@ void AudioCapture::push(const float* stereo, size_t frames) {
 // Defines (not just declares) PKEY_Device_FriendlyName and the KSDATAFORMAT GUIDs.
 #include <initguid.h>
 
+// Order matters: mmdeviceapi.h pulls in propkeydef.h, which defines DEFINE_PROPERTYKEY.
+// clang-format off
+#include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
-#include <mmdeviceapi.h>
+// clang-format on
 
 namespace {
 
