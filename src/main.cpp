@@ -654,15 +654,16 @@ int main(int argc, char* argv[]) {
             // Presets react to our analysis (patched projectM), scaled around 1.0
             const float k = app.cfg.reactionStrength;
 
-            // Tracked beat as a pulse. Scaled by how sure the lock is (0 below 0.4 confidence, full
-            // from 0.8) and how present the kick is (0 at once on silence or when it stops, follows
-            // a fade-out). Never while coasting. Drops immediately, comes back over ~0.5 s.
+            // Tracked beat as a pulse. Scaled by how sure the lock is (0 below 0.25 confidence, full
+            // from 0.6) and how present the kick is (fades with a weak or missing kick). Never while
+            // coasting. Real silence mutes it at once; when sound returns it is back within ~150 ms.
             const float sure = app.tracker.state == TrackState::Locked
-                                   ? std::clamp((app.tracker.confidence - 0.4f) / 0.4f, 0.0f, 1.0f)
+                                   ? std::clamp((app.tracker.confidence - 0.25f) / 0.35f, 0.0f, 1.0f)
                                    : 0.0f;
-            const float target = app.cfg.beatInjectMix * sure * app.tracker.beatPresence;
+            float target = app.tracker.silent ? 0.0f : app.cfg.beatInjectMix * sure * app.tracker.beatPresence;
+            if (app.cfg.pulseOverride) target = app.cfg.beatInjectMix;  // test switch
             if (target < app.injectMix) app.injectMix = target;
-            else app.injectMix += (target - app.injectMix) * std::min(1.0f, frameMs / 500.0f);
+            else app.injectMix += (target - app.injectMix) * std::min(1.0f, frameMs / 150.0f);
             const float sinceBeat = static_cast<float>(now() - app.lastBeatWall);
             const float decay = std::max(0.01f, app.cfg.beatInjectDecay);
             const float pulse = 1.0f + app.cfg.beatInjectHeight * std::exp(-sinceBeat / decay);

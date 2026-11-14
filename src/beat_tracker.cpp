@@ -129,7 +129,9 @@ void BeatTracker::hop(const TrackerSettings& s) {
 
     // --- Silence gate: absolute floor or far below the recent level
     longRms_ = longRms_ * 0.995f + rms * 0.005f;
-    silent = rms < 1e-4f || rms < longRms_ * 0.08f;
+    // Real silence only (pause, track gap): about -70 dBFS or far below the recent level.
+    // Quiet breakdowns are not silence.
+    silent = rms < 3e-4f || rms < longRms_ * 0.02f;
 
     // --- Log-compressed spectral flux: full band (to ~10 kHz), bass (30-180 Hz), click (1.5-5 kHz);
     //     sub-bass (30-90 Hz) energy
@@ -190,8 +192,11 @@ void BeatTracker::hop(const TrackerSettings& s) {
 
     // Spectrum summary per beat (12 log-spaced bands, 60 Hz - 8 kHz) for the downbeat estimate
     if (silent) {
-        beatPresence = 0;  // no twitching in silence
+        // Short gaps (stutter edits) keep the kick level; a real pause starts over
+        silentSeconds += kHop / static_cast<float>(sampleRate_);
+        if (silentSeconds > 1.0f) beatPresence = 0;
     } else {
+        silentSeconds = 0;
         for (int b = 0; b < kBands; b++) {
             const float lo = 60.0f * std::pow(2.0f, b * 7.0f / kBands);
             const float hi = 60.0f * std::pow(2.0f, (b + 1) * 7.0f / kBands);
@@ -443,20 +448,14 @@ void BeatTracker::beatEmitted() {
 }
 
 void BeatTracker::updatePresence(float kick, bool quiet) {
-    if (quiet) {
-        beatPresence = 0;
-        return;
-    }
+    if (quiet) return;  // silence is handled per frame (silentSeconds), the caller mutes the pulse
     if (kickAvg_ <= 1e-6f) kickAvg_ = kick;
     // 1.25: a normal kick (with some jitter around the average) counts as fully present
     const float raw = kickAvg_ > 1e-6f ? std::min(1.0f, 1.25f * kick / kickAvg_) : 0.0f;
-    if (raw < 0.35f) {
-        beatPresence = 0;  // the kick stopped: no pulse at once
-    } else if (raw < beatPresence) {
-        beatPresence = raw;  // fading out: follow down directly
-    } else {
-        beatPresence += (raw - beatPresence) * 0.35f;  // coming back: over a few beats
-    }
+    // Weak or missing kicks inside the music fade the presence over a few beats (no hard drop;
+    // only real silence does that), a returning kick brings it back a little slower.
+    if (raw < beatPresence) beatPresence += (raw - beatPresence) * 0.3f;
+    else beatPresence += (raw - beatPresence) * 0.25f;
     // Learn the usual kick level from clear beats; adapt slowly to a weaker (but present) kick
     if (raw > 0.6f) kickAvg_ += (kick - kickAvg_) * 0.06f;
     else if (raw >= 0.3f) kickAvg_ += (kick - kickAvg_) * 0.02f;

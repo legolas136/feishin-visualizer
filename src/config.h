@@ -26,6 +26,7 @@ struct Config {
     int switchEveryBeats = 0;
     bool switchOnBeatHardCut = false;
     bool switchOnDownbeat = true;  // beat-synced switches wait for the "1" when it is known
+    bool pulseOverride = false;    // test switch (not saved): full pulse mix regardless of lock/kick/silence
 
     int meshWidth = 48;
     int meshHeight = 36;

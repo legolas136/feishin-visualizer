@@ -464,9 +464,12 @@ void BeatWindow::drawTracker(const BeatTracker& t, Config& cfg, const Status& st
     ImGui::BeginDisabled(!cfg.presetsUseAnalysis);
     ImGui::SliderFloat("beat pulse mix", &cfg.beatInjectMix, 0.0f, 1.0f, "%.2f");
     ImGui::SetItemTooltip("Mixes a pulse on every tracked beat into what presets see as bass (and bass_att).\n"
-                          "0 = off, 1 = presets react only to the tracked beat. Applied only as far as the\n"
-                          "lock is sure and the kick is present: off in silence, off at once when the kick\n"
-                          "stops, fading with a fading kick.");
+                          "0 = off, 1 = presets react only to the tracked beat. Applied as far as the lock is\n"
+                          "sure and the kick is present (fades with a weak or missing kick). Off at once in\n"
+                          "real silence, back within ~150 ms when the sound returns.");
+    ImGui::Checkbox("override: always full pulse mix (test)", &cfg.pulseOverride);
+    ImGui::SetItemTooltip("Ignores lock confidence, kick presence and silence. Pulses still need tracked beats.\n"
+                          "Not saved.");
     ImGui::SliderFloat("pulse height", &cfg.beatInjectHeight, 0.2f, 4.0f, "%.2f");
     ImGui::SliderFloat("pulse decay (s)", &cfg.beatInjectDecay, 0.03f, 0.6f, "%.2f");
     ImGui::Checkbox("pulse on bass, mid and treb (off: bass only)", &cfg.beatInjectAllBands);

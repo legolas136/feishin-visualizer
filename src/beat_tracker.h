@@ -57,8 +57,9 @@ public:
     float phaseMismatchSeconds = 0;      // how long another beat phase has fitted clearly better
 
     // How present the beat is right now (0..1): kick strength at the latest beats relative to the
-    // usual kick of this track. 0 at once on silence or when the kick suddenly stops, follows a fade.
+    // usual kick of this track. 0 at once on real silence, fades with a weak or missing kick.
     float beatPresence = 0;
+    float silentSeconds = 0;  // how long the current silence lasts (0 while there is sound)
 
     // Bar position ("the 1"): manual (markDownbeat) or estimated from where the sound changes
     int barPosition() const;             // 0 = last beat was the "1", 1..3, -1 = unknown
